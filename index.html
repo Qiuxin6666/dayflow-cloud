@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18261f">
+  <meta name="description" content="日序 DayFlow — 把日程和短期任务丢进来，自动生成行程，并在合适的时间提醒你。">
+  <title>日序 DayFlow · 你的本地日程助理</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/><path d="M8 13.5h.01M12 13.5h.01M16 13.5h.01M8 17h.01M12 17h.01"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4.5 5.5h15l1.5 9v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3l1.5-9Z"/><path d="M3 14h5l1.2 2.2h5.6L16 14h5"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.94 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.2 4L19 6.8"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3.5 13.6 9 19 10.5 13.6 12 12 17.5 10.4 12 5 10.5 10.4 9 12 3.5Z"/><path d="M19 15.5 19.8 18l2.2.8-2.2.7L19 22l-.8-2.5-2.2-.7 2.2-.8.8-2.5Z"/><path d="M5 2.5 5.6 4.4 7.5 5l-1.9.6L5 7.5l-.6-1.9L2.5 5l1.9-.6L5 2.5Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7.5 18-3.2-7.3L3 10.5 21 3Z"/><path d="m10.3 13.7 4.2-4.2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0 4 4m-4-4L8 8M4 20h16"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-smartphone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M10.5 18.5h3"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h5M11 17h5"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 7v5h-5"/><path d="M19 12a7.5 7.5 0 1 0-2.2 5.3"/><path d="M4 17v-5h5"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v9"/><path d="M6.2 5.8a8.5 8.5 0 1 0 11.6 0"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.9-10.9a2.3 2.3 0 0 0-3.2-3.2L5 15.8 4 20Z"/><path d="m13.8 7 3.2 3.2"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 2h6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h2a2.5 2.5 0 0 1 0 5h-2M7 3.5v2M11 3.5v2M15 3.5v2"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#today" aria-label="日序首页">
+        <span class="brand-mark">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15.5" r="5.2" fill="currentColor"/><path d="M9 24.5h22M12 29h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-copy"><strong>日序</strong><small>DAYFLOW</small></span>
+      </a>
+
+      <p class="sidebar-quote">把要做的事交给我，<br>时间会自己排好。</p>
+
+      <div class="nav-block">
+        <p class="nav-caption">工作台</p>
+        <nav class="nav-list" id="mainNav" aria-label="主导航">
+          <button class="nav-item is-active" data-view="today">
+            <svg class="icon"><use href="#i-sun"></use></svg><span>今日</span><em class="nav-count" id="navTodayCount"></em>
+          </button>
+          <button class="nav-item" data-view="plan">
+            <svg class="icon"><use href="#i-calendar"></use></svg><span>行程</span>
+          </button>
+          <button class="nav-item" data-view="tasks">
+            <svg class="icon"><use href="#i-inbox"></use></svg><span>任务箱</span><em class="nav-count" id="navTaskCount"></em>
+          </button>
+          <button class="nav-item" data-view="reminders">
+            <svg class="icon"><use href="#i-bell"></use></svg><span>提醒</span>
+          </button>
+        </nav>
+        <p class="nav-caption nav-caption--second">偏好</p>
+        <nav class="nav-list" aria-label="设置导航">
+          <button class="nav-item" data-view="settings">
+            <svg class="icon"><use href="#i-settings"></use></svg><span>设置</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="side-week">
+        <div class="side-week-top"><span>本周专注</span><strong id="sideWeekHours">0h</strong></div>
+        <div class="meter"><span id="sideWeekBar" style="width:0%"></span></div>
+        <p id="sideWeekHint">还没有安排，添加第一件事吧</p>
+      </div>
+
+      <div class="server-pill" id="serverPill">
+        <span class="status-dot"></span>
+        <span class="server-copy"><strong id="serverPillTitle">本地助理</strong><small id="serverPillText">正在连接…</small></span>
+      </div>
+
+      <button class="user-chip" id="userChip" data-view="settings">
+        <span class="avatar" id="userAvatar">友</span>
+        <span class="user-copy"><strong id="userName">朋友</strong><small>个人设置</small></span>
+        <svg class="icon icon--tiny"><use href="#i-arrow-right"></use></svg>
+      </button>
+    </aside>
+
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-context">
+          <span id="topSection">今日</span>
+          <span class="slash">/</span>
+          <span id="topDate">10月30日 周五</span>
+        </div>
+        <div class="topbar-actions">
+          <div class="live-clock" title="本机时间">
+            <span class="pulse-dot"></span><span id="liveClock">09:02</span>
+          </div>
+          <button class="save-state" id="saveState" title="数据自动保存">已保存</button>
+          <button class="icon-btn mobile-settings-btn" data-view="settings" aria-label="设置" title="设置">
+            <svg class="icon"><use href="#i-settings"></use></svg>
+          </button>
+          <div class="bell-wrap">
+            <button class="icon-btn" id="bellBtn" aria-label="提醒中心" aria-expanded="false">
+              <svg class="icon"><use href="#i-bell"></use></svg>
+              <span class="badge" id="bellBadge" hidden>0</span>
+            </button>
+            <div class="popover" id="bellPopover" hidden>
+              <div class="popover-head"><strong>提醒中心</strong><span id="bellChannel">本机通知</span></div>
+              <div id="bellContent"></div>
+              <button class="popover-link" data-view="reminders">查看全部提醒 <svg class="icon icon--tiny"><use href="#i-arrow-right"></use></svg></button>
+            </div>
+          </div>
+          <button class="btn btn--primary top-add" id="topAddBtn">
+            <svg class="icon"><use href="#i-plus"></use></svg><span>新建</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="view is-active" id="view-today" data-view-panel="today">
+          <div class="demo-banner" id="demoBanner" hidden>
+            <span class="demo-dot"></span>
+            <p>这里是几条示例安排，帮你先看清使用方式。</p>
+            <button class="text-btn" id="clearDemoBtn">清空示例</button>
+            <button class="icon-btn icon-btn--small" id="dismissDemoBtn" aria-label="收起示例提示"><svg class="icon"><use href="#i-x"></use></svg></button>
+          </div>
+
+          <div class="today-head">
+            <div class="today-heading">
+              <p class="eyebrow" id="todayEyebrow">FRIDAY · 10月30日</p>
+              <h1 id="todayTitle">早上好，今天有 <span>3 件事</span>。</h1>
+              <p class="today-sub" id="todaySub">正在整理你的行程…</p>
+            </div>
+            <div class="today-metrics">
+              <div class="metric"><strong id="metricCount">0</strong><span>项安排</span></div>
+              <div class="metric"><strong id="metricFocus">0h</strong><span>专注时长</span></div>
+              <div class="metric"><strong id="metricDone">0</strong><span>已完成</span></div>
+            </div>
+          </div>
+
+          <div class="today-layout">
+            <div class="today-main">
+              <section class="capture-card">
+                <div class="capture-head">
+                  <span class="capture-mark"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                  <div class="capture-title"><span>QUICK CAPTURE</span><h2>一句话，把事丢给我</h2></div>
+                  <span class="ai-tag"><i></i>自然语言解析</span>
+                </div>
+                <form id="captureForm">
+                  <label class="sr-only" for="captureInput">输入日程或任务</label>
+                  <textarea id="captureInput" rows="2" placeholder="例：明天下午 3 点和导师开会，周五前交实验报告"></textarea>
+                  <div class="capture-tools">
+                    <div class="capture-examples" aria-label="示例输入">
+                      <button type="button" data-example="明天下午3点和导师开会">明天下午3点开会</button>
+                      <button type="button" data-example="周五前交实验报告">周五前交报告</button>
+                      <button type="button" data-example="今晚8点跑步30分钟">今晚跑步</button>
+                    </div>
+                    <button class="capture-submit" type="submit" aria-label="解析并添加">
+                      <span>帮我安排</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg>
+                    </button>
+                  </div>
+                </form>
+                <div class="parse-preview" id="parsePreview" hidden></div>
+                <div class="capture-foot">
+                  <span><svg class="icon icon--tiny"><use href="#i-sparkles"></use></svg> 能听懂日期、时间、时长和优先级</span>
+                  <kbd>Ctrl</kbd><span class="kbd-plus">+</span><kbd>Enter</kbd>
+                </div>
+              </section>
+
+              <section class="card timeline-card">
+                <div class="card-head">
+                  <div><p class="section-kicker">MY DAY</p><h2 id="dayTitle">今日行程</h2></div>
+                  <div class="day-nav">
+                    <button class="icon-btn icon-btn--small" id="prevDayBtn" aria-label="前一天"><svg class="icon"><use href="#i-arrow-left"></use></svg></button>
+                    <button class="text-btn" id="backTodayBtn">回到今天</button>
+                    <button class="icon-btn icon-btn--small" id="nextDayBtn" aria-label="后一天"><svg class="icon"><use href="#i-arrow-right"></use></svg></button>
+                  </div>
+                </div>
+                <div class="timeline-topline">
+                  <div class="legend">
+                    <span><i class="dot dot--work"></i>工作</span><span><i class="dot dot--study"></i>学习</span><span><i class="dot dot--life"></i>生活</span><span><i class="dot dot--health"></i>健康</span>
+                  </div>
+                  <span class="timeline-hint">双击空白处，快速添加</span>
+                </div>
+                <div class="timeline-empty" id="timelineEmpty" hidden>
+                  <span class="empty-orbit"><svg class="icon"><use href="#i-coffee"></use></svg></span>
+                  <h3>这一天还是空的</h3>
+                  <p>丢一件小事进来，我帮你放进合适的时间。</p>
+                  <button class="btn btn--soft" data-add-day>添加安排</button>
+                </div>
+                <div class="timeline-scroll" id="timelineScroll"><div class="timeline" id="todayTimeline"></div></div>
+              </section>
+            </div>
+
+            <aside class="today-rail">
+              <section class="next-card" id="nextCard">
+                <div class="next-top"><span>UP NEXT</span><span id="nextCountdown">--</span></div>
+                <div class="next-time" id="nextTime">--:--</div>
+                <h3 id="nextTitle">正在读取今天的安排</h3>
+                <p id="nextMeta">稍等一下…</p>
+                <button class="next-action" id="nextAction">查看任务 <svg class="icon icon--tiny"><use href="#i-arrow-up-right"></use></svg></button>
+              </section>
+
+              <section class="card progress-card">
+                <div class="progress-ring-wrap">
+                  <svg class="progress-ring" viewBox="0 0 120 120" aria-hidden="true">
+                    <circle class="ring-track" cx="60" cy="60" r="49"></circle>
+                    <circle class="ring-value" id="ringValue" cx="60" cy="60" r="49"></circle>
+                  </svg>
+                  <div class="ring-label"><strong id="progressPercent">0%</strong><span>今日完成</span></div>
+                </div>
+                <div class="progress-copy">
+                  <p class="section-kicker">TODAY'S PACE</p>
+                  <h3 id="progressTitle">从第一件开始</h3>
+                  <p id="progressText">完成一项，就离从容更近一点。</p>
+                  <div class="progress-stats"><span><strong id="progressDone">0</strong> 已完成</span><span><strong id="progressLeft">0</strong> 待办</span></div>
+                </div>
+              </section>
+
+              <section class="card rail-card">
+                <div class="rail-head"><div><p class="section-kicker">REMINDERS</p><h3>接下来会提醒你</h3></div><button class="icon-btn icon-btn--small" data-view="reminders" aria-label="查看全部提醒"><svg class="icon"><use href="#i-arrow-up-right"></use></svg></button></div>
+                <div class="rail-reminders" id="railReminders"></div>
+              </section>
+
+              <section class="card week-glance">
+                <div class="rail-head"><div><p class="section-kicker">THIS WEEK</p><h3>本周节奏</h3></div><span class="week-glance-total" id="weekGlanceTotal">0h</span></div>
+                <div class="week-dots" id="weekDots"></div>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-plan" data-view-panel="plan">
+          <div class="page-head">
+            <div><p class="eyebrow">WEEKLY PLAN</p><h1>一周行程</h1><p class="page-sub">把任务放进时间里，留一点空白给意外和休息。</p></div>
+            <button class="btn btn--primary" id="planAddBtn"><svg class="icon"><use href="#i-plus"></use></svg>添加安排</button>
+          </div>
+          <div class="planner-toolbar">
+            <div class="week-nav">
+              <button class="icon-btn" id="prevWeekBtn" aria-label="上一周"><svg class="icon"><use href="#i-arrow-left"></use></svg></button>
+              <button class="text-btn" id="thisWeekBtn">本周</button>
+              <button class="icon-btn" id="nextWeekBtn" aria-label="下一周"><svg class="icon"><use href="#i-arrow-right"></use></svg></button>
+              <strong id="weekRange">10月27日 — 11月2日</strong>
+            </div>
+            <div class="toolbar-right">
+              <span class="plan-note"><i class="dot dot--live"></i>拖不动时间？点开任务即可改成固定日程</span>
+              <button class="btn btn--soft" id="replanBtn"><svg class="icon"><use href="#i-rotate"></use></svg>重新智能排程</button>
+            </div>
+          </div>
+          <section class="week-card">
+            <div class="week-scroll" id="weekScroll"><div class="week-canvas" id="weekCanvas"></div></div>
+          </section>
+          <div class="planner-foot">
+            <div class="legend"><span><i class="dot dot--work"></i>工作</span><span><i class="dot dot--study"></i>学习</span><span><i class="dot dot--life"></i>生活</span><span><i class="dot dot--health"></i>健康</span><span><i class="dot dot--fixed"></i>固定日程</span></div>
+            <p>智能安排会避开午休和已固定的日程，并在每件事之间留出缓冲。</p>
+          </div>
+        </section>
+
+        <section class="view" id="view-tasks" data-view-panel="tasks">
+          <div class="page-head">
+            <div><p class="eyebrow">TASK INBOX</p><h1>任务箱</h1><p class="page-sub">先收集，再安排。别让想法只停在脑子里。</p></div>
+            <button class="btn btn--primary" id="taskAddBtn"><svg class="icon"><use href="#i-plus"></use></svg>新任务</button>
+          </div>
+          <div class="task-tabs" id="taskTabs" role="tablist">
+            <button class="is-active" data-status="open">待完成 <em id="tabOpenCount">0</em></button>
+            <button data-status="all">全部</button>
+            <button data-status="scheduled">已排程</button>
+            <button data-status="unscheduled">待排程</button>
+            <button data-status="done">已完成</button>
+          </div>
+          <div class="task-toolbar">
+            <div class="task-toolbar-left">
+              <label class="select-wrap"><svg class="icon icon--tiny"><use href="#i-target"></use></svg><select id="categoryFilter" aria-label="按分类筛选"><option value="all">全部分类</option><option value="work">工作</option><option value="study">学习</option><option value="life">生活</option><option value="health">健康</option><option value="other">其他</option></select></label>
+              <label class="search-box"><svg class="icon icon--tiny"><use href="#i-search"></use></svg><input id="taskSearch" type="search" placeholder="搜索任务…" autocomplete="off"></label>
+            </div>
+            <p class="task-count" id="taskCount">0 个任务</p>
+          </div>
+          <div class="task-layout">
+            <div class="task-list" id="taskList"></div>
+            <aside class="task-aside">
+              <section class="card summary-card">
+                <p class="section-kicker">AT A GLANCE</p>
+                <h3>任务概览</h3>
+                <div class="summary-grid">
+                  <div><strong id="sumOpen">0</strong><span>待完成</span></div>
+                  <div><strong id="sumScheduled">0</strong><span>已排程</span></div>
+                  <div><strong id="sumUnscheduled">0</strong><span>待排程</span></div>
+                  <div><strong id="sumHigh">0</strong><span>高优先</span></div>
+                </div>
+                <div class="summary-meter"><div><span>本周完成率</span><strong id="sumRate">0%</strong></div><div class="meter"><span id="sumRateBar" style="width:0%"></span></div></div>
+              </section>
+              <section class="tip-card">
+                <span class="tip-mark"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
+                <h3>一个小建议</h3>
+                <p>给任务一个明确的“截止时间”，我会更准确地把它放进这周的空档里。</p>
+              </section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-reminders" data-view-panel="reminders">
+          <div class="page-head">
+            <div><p class="eyebrow">REMINDERS</p><h1>提醒</h1><p class="page-sub">在开始前留一点准备时间，让每件事都不慌不忙。</p></div>
+            <button class="btn btn--soft" id="testNotifyBtn"><svg class="icon"><use href="#i-bell"></use></svg>发一条测试提醒</button>
+          </div>
+          <div class="reminder-layout">
+            <div class="reminder-main">
+              <section class="channel-card" id="channelCard"></section>
+              <section class="card reminders-list-card">
+                <div class="card-head"><div><p class="section-kicker">UPCOMING</p><h2>接下来的提醒</h2></div><span class="soft-count" id="reminderCount">0 条</span></div>
+                <div class="reminder-list" id="reminderList"></div>
+              </section>
+              <section class="card history-card">
+                <div class="card-head"><div><p class="section-kicker">RECENT</p><h2>最近提醒</h2></div><button class="text-btn" id="clearHistoryBtn">清空</button></div>
+                <div class="event-history" id="eventHistory"></div>
+              </section>
+            </div>
+            <aside class="reminder-aside">
+              <section class="card rules-card">
+                <p class="section-kicker">RULES</p><h3>提醒规则</h3>
+                <div class="rule-row"><div><strong>Windows 通知</strong><span>到点在本机弹出提醒</span></div><label class="switch"><input type="checkbox" data-quick-setting="nativeEnabled"><span></span></label></div>
+                <div class="rule-row"><div><strong>提示音</strong><span>弹窗时轻轻响一声</span></div><label class="switch"><input type="checkbox" data-quick-setting="sound"><span></span></label></div>
+                <div class="rule-row"><div><strong>截止提醒</strong><span>截止前 2 小时再提醒一次</span></div><label class="switch"><input type="checkbox" data-quick-setting="deadlineReminder"><span></span></label></div>
+                <div class="rule-field"><label for="quickLead">默认提前量</label><select id="quickLead"><option value="0">准时提醒</option><option value="5">提前 5 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option><option value="120">提前 2 小时</option></select></div>
+                <button class="text-btn text-btn--arrow" data-view="settings">更多提醒设置 <svg class="icon icon--tiny"><use href="#i-arrow-right"></use></svg></button>
+              </section>
+              <section class="card webhook-card" id="webhookSummary"></section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings" data-view-panel="settings">
+          <div class="page-head">
+            <div><p class="eyebrow">PREFERENCES</p><h1>设置</h1><p class="page-sub">调整工作节奏和提醒方式，让日序更像你的助理。</p></div>
+            <span class="saved-note"><svg class="icon icon--tiny"><use href="#i-check"></use></svg>所有改动自动保存</span>
+          </div>
+          <div class="settings-grid">
+            <section class="card setting-card">
+              <div class="setting-head"><span>01</span><div><h3>关于你</h3><p>怎么称呼你，以及你的常规工作时段。</p></div></div>
+              <div class="form-grid">
+                <label class="field"><span>你的称呼</span><input type="text" data-setting="userName" placeholder="朋友" maxlength="16"></label>
+                <div class="field field--inline"><span>工作时段</span><div class="time-pair"><input type="time" data-setting="workStart"><i>—</i><input type="time" data-setting="workEnd"></div></div>
+                <div class="field field--inline"><span>午休时间</span><div class="time-pair"><input type="time" data-setting="lunchStart"><i>—</i><input type="time" data-setting="lunchEnd"></div></div>
+              </div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>02</span><div><h3>排程节奏</h3><p>智能安排会在这个范围内寻找空档。</p></div></div>
+              <div class="form-grid">
+                <label class="field"><span>每日专注上限（分钟）</span><input type="number" min="60" max="720" step="30" data-setting="dailyCapacity"></label>
+                <label class="field"><span>新任务默认用时（分钟）</span><input type="number" min="15" max="240" step="15" data-setting="defaultDuration"></label>
+                <label class="field"><span>任务之间缓冲（分钟）</span><input type="number" min="0" max="60" step="5" data-setting="buffer"></label>
+                <div class="field"><span>晚间时段</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="eveningEnabled"><span></span></label><small>生活与健康类任务可以排到晚上</small></div></div>
+                <div class="field field--inline"><span>晚间时段</span><div class="time-pair"><input type="time" data-setting="eveningStart"><i>—</i><input type="time" data-setting="eveningEnd"></div></div>
+              </div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>03</span><div><h3>提醒方式</h3><p>本机通知是默认通道，也可以同时发到手机。</p></div></div>
+              <div class="form-grid">
+                <label class="field"><span>默认提前提醒</span><select data-setting="defaultLead"><option value="0">准时提醒</option><option value="5">提前 5 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option><option value="120">提前 2 小时</option></select></label>
+                <label class="field"><span>截止提醒提前（分钟）</span><input type="number" min="0" max="2880" step="30" data-setting="deadlineLead"></label>
+                <div class="field"><span>本机通知</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="nativeEnabled"><span></span></label><small>需要本地助理正在运行</small></div></div>
+                <div class="field"><span>提示音</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="sound"><span></span></label><small>弹窗时响一声</small></div></div>
+                <div class="field"><span>截止提醒</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="deadlineReminder"><span></span></label><small>截止前再提醒一次</small></div></div>
+                <div class="field"><span>勿扰时段</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="quietEnabled"><span></span></label><small>这段时间不发送提醒</small></div></div>
+                <div class="field field--inline"><span>勿扰范围</span><div class="time-pair"><input type="time" data-setting="quietStart"><i>—</i><input type="time" data-setting="quietEnd"></div></div>
+              </div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>04</span><div><h3>手机消息通道</h3><p>可选。把提醒同时推送到企业微信、飞书、钉钉、Server酱或自定义 Webhook。</p></div><span class="pill" id="webhookStatusPill">未启用</span></div>
+              <div class="form-grid">
+                <div class="field"><span>启用消息推送</span><div class="switch-line"><label class="switch"><input type="checkbox" id="webhookEnabled" data-webhook="enabled"><span></span></label><small>和本机通知可以同时使用</small></div></div>
+                <label class="field"><span>平台</span><select data-webhook="type"><option value="auto">自动识别</option><option value="wecom">企业微信群机器人</option><option value="feishu">飞书群机器人</option><option value="dingtalk">钉钉群机器人</option><option value="serverchan">Server酱</option><option value="ntfy">ntfy（手机推送，无需账号）</option><option value="custom">自定义 Webhook</option></select></label>
+                <label class="field field--full"><span>Webhook 地址</span><input type="url" data-webhook="url" placeholder="粘贴机器人 Webhook 地址"><small>地址只保存在你自己的电脑上，不会上传到任何第三方。</small></label>
+                <label class="field field--full" id="webhookSecretField"><span>签名密钥（钉钉可选）</span><input type="password" data-webhook="secret" placeholder="机器人安全设置中的加签密钥" autocomplete="off"></label>
+              </div>
+              <div class="inline-actions"><button class="btn btn--soft" id="testWebhookBtn"><svg class="icon"><use href="#i-send"></use></svg>发送测试消息</button><button class="btn btn--ghost" id="generateNtfyBtn">生成 ntfy 主题</button><button class="btn btn--ghost" id="openWebhookHelpBtn">怎么获取地址？</button></div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>05</span><div><h3>云端账号</h3><p>电脑和手机登录同一个账号，日程自动同步。</p></div></div>
+              <div class="server-detail" id="serverDetail">正在读取运行状态…</div>
+              <div class="phone-access" id="phoneAccess">
+                <div class="phone-access-copy"><span>手机 / 电脑访问地址</span><code id="phoneUrl">正在读取地址…</code></div>
+                <button class="btn btn--soft" id="copyPhoneUrl"><svg class="icon"><use href="#i-link"></use></svg>复制地址</button>
+              </div>
+              <p class="phone-access-note" id="phoneNote">手机浏览器不能直接接收局域网 HTTP 通知；下拉到「手机消息通道」配置一次，就能把提醒推到手机。</p>
+              <div class="cloud-migrate">
+                <div><strong>从旧版迁移</strong><span>导入旧版导出的 dayflow-backup.json</span></div>
+                <button class="btn btn--soft" id="cloudImportBtn" type="button">导入备份</button>
+              </div>
+              <div class="rule-row rule-row--tight"><div><strong>开机自动启动</strong><span>登录 Windows 后自动在后台运行</span></div><label class="switch"><input type="checkbox" id="autostartToggle"><span></span></label></div>
+              <div class="inline-actions"><button class="btn btn--soft" id="restartHintBtn">如何启动/停止</button><button class="btn btn--danger-ghost" id="shutdownBtn"><svg class="icon"><use href="#i-power"></use></svg>停止本地助理</button></div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>06</span><div><h3>数据</h3><p>你的数据默认只存在本机，可以随时导出备份。</p></div></div>
+              <div class="data-row"><span>数据文件</span><code id="dataPath">浏览器本地存储</code></div>
+              <div class="data-stats"><div><strong id="dataTaskCount">0</strong><span>任务</span></div><div><strong id="dataEventCount">0</strong><span>提醒记录</span></div><div><strong id="dataDays">0</strong><span>使用天数</span></div></div>
+              <div class="inline-actions"><button class="btn btn--soft" id="exportBtn"><svg class="icon"><use href="#i-download"></use></svg>导出备份</button><button class="btn btn--soft" id="importBtn"><svg class="icon"><use href="#i-upload"></use></svg>导入备份</button><button class="btn btn--danger-ghost" id="resetBtn"><svg class="icon"><use href="#i-trash"></use></svg>清空所有数据</button><input type="file" id="importFile" accept="application/json" hidden></div>
+            </section>
+          </div>
+          <footer class="app-footer"><span>日序 DayFlow</span><span>本地优先 · 你的日程只属于你</span><span>v1.0</span></footer>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <nav class="mobile-nav" aria-label="移动端导航">
+    <button class="is-active" data-view="today"><svg class="icon"><use href="#i-sun"></use></svg><span>今日</span></button>
+    <button data-view="plan"><svg class="icon"><use href="#i-calendar"></use></svg><span>行程</span></button>
+    <button class="mobile-add" id="mobileAddBtn" aria-label="新建任务"><svg class="icon"><use href="#i-plus"></use></svg></button>
+    <button data-view="tasks"><svg class="icon"><use href="#i-inbox"></use></svg><span>任务</span></button>
+    <button data-view="reminders"><svg class="icon"><use href="#i-bell"></use></svg><span>提醒</span></button>
+  </nav>
+
+  <div class="modal-layer" id="taskModal" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <div><p class="section-kicker" id="modalKicker">NEW TASK</p><h2 id="modalTitle">添加一件事</h2></div>
+        <button class="icon-btn" data-close-modal aria-label="关闭"><svg class="icon"><use href="#i-x"></use></svg></button>
+      </div>
+      <form id="taskForm">
+        <input type="hidden" id="taskId">
+        <label class="field field--title"><span>要做什么？</span><input type="text" id="taskTitle" placeholder="例：完成市场调研初稿" maxlength="80" required autocomplete="off"></label>
+        <div class="mode-switch" id="modeSwitch">
+          <button type="button" data-mode="auto" class="is-active"><svg class="icon"><use href="#i-sparkles"></use></svg><span><strong>智能安排</strong><small>我找空档，截止前完成</small></span></button>
+          <button type="button" data-mode="fixed"><svg class="icon"><use href="#i-clock"></use></svg><span><strong>固定日程</strong><small>会议、约会等不可移动的事</small></span></button>
+        </div>
+        <div class="form-grid form-grid--modal">
+          <div class="field"><span>分类</span><div class="choice-pills" id="categoryPicker">
+            <button type="button" data-category="work" class="is-active"><i class="dot dot--work"></i>工作</button>
+            <button type="button" data-category="study"><i class="dot dot--study"></i>学习</button>
+            <button type="button" data-category="life"><i class="dot dot--life"></i>生活</button>
+            <button type="button" data-category="health"><i class="dot dot--health"></i>健康</button>
+            <button type="button" data-category="other"><i class="dot dot--other"></i>其他</button>
+          </div></div>
+          <div class="field"><span>优先级</span><div class="choice-pills" id="priorityPicker">
+            <button type="button" data-priority="3">普通</button>
+            <button type="button" data-priority="2" class="is-active">重要</button>
+            <button type="button" data-priority="1">紧急</button>
+          </div></div>
+        </div>
+        <div class="mode-fields" id="autoFields">
+          <div class="form-grid form-grid--modal">
+            <label class="field"><span>截止时间 <small>可选</small></span><input type="datetime-local" id="taskDeadline"></label>
+            <label class="field"><span>预计用时（分钟）</span><input type="number" id="taskEstimate" min="15" max="240" step="1" value="45"></label>
+            <label class="field"><span>最早开始日期 <small>可选</small></span><input type="date" id="taskAvailable"></label>
+          </div>
+        </div>
+        <div class="mode-fields" id="fixedFields" hidden>
+          <div class="form-grid form-grid--modal">
+            <label class="field"><span>日期</span><input type="date" id="taskDate"></label>
+            <label class="field"><span>开始时间</span><input type="time" id="taskStart"></label>
+            <label class="field"><span>时长（分钟）</span><input type="number" id="taskDuration" min="15" max="720" step="1" value="60"></label>
+          </div>
+        </div>
+        <div class="form-grid form-grid--modal">
+          <label class="field"><span>提前提醒</span><select id="taskReminder"><option value="">使用默认设置</option><option value="0">准时</option><option value="5">提前 5 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option><option value="120">提前 2 小时</option><option value="1440">提前 1 天</option></select></label>
+          <label class="field field--full"><span>备注 <small>可选</small></span><textarea id="taskNotes" rows="2" placeholder="补充一点背景、地点或链接…"></textarea></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn--danger-ghost" id="deleteTaskBtn" hidden><svg class="icon"><use href="#i-trash"></use></svg>删除</button>
+          <span class="modal-spacer"></span>
+          <button type="button" class="btn btn--ghost" data-close-modal>取消</button>
+          <button type="submit" class="btn btn--primary" id="saveTaskBtn">加入行程</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-layer" id="confirmModal" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-confirm></div>
+    <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <span class="confirm-icon"><svg class="icon"><use href="#i-alert"></use></svg></span>
+      <h2 id="confirmTitle">确认操作</h2>
+      <p id="confirmText"></p>
+      <div class="confirm-actions"><button class="btn btn--ghost" id="confirmCancel">取消</button><button class="btn btn--danger" id="confirmOk">确认</button></div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <div class="cloud-login" id="cloudLogin" hidden>
+    <div class="cloud-login-card">
+      <div class="cloud-login-brand"><span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15.5" r="5.2" fill="currentColor"/><path d="M9 24.5h22M12 29h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></span><div><strong>日序</strong><small>DAYFLOW CLOUD</small></div></div>
+      <p class="section-kicker">YOUR ACCOUNT</p>
+      <h1>登录日序</h1>
+      <p class="cloud-login-sub">电脑和手机登录同一个账号，日程会自动同步。</p>
+      <form id="cloudAuthForm">
+        <label class="cloud-field"><span>邮箱</span><input type="email" id="cloudEmail" autocomplete="email" placeholder="you@example.com" required></label>
+        <label class="cloud-field"><span>密码</span><input type="password" id="cloudPassword" autocomplete="current-password" placeholder="至少 6 位" minlength="6" required></label>
+        <label class="cloud-field" id="cloudPassword2Wrap" hidden><span>确认密码</span><input type="password" id="cloudPassword2" autocomplete="new-password" minlength="6"></label>
+        <button class="btn btn--primary cloud-submit" type="submit" id="cloudAuthSubmit">登录</button>
+      </form>
+      <button class="text-btn cloud-signup-toggle" id="cloudSignupToggle">第一次使用？创建账号</button>
+      <p class="cloud-message" id="cloudAuthMessage"></p>
+      <p class="cloud-privacy">数据保存在你自己的 Supabase 项目中，不经过日序的服务器。</p>
+      <p class="cloud-privacy"><a href="https://supabase.com/dashboard/project/yzvvtioizljkxcqhzxjh/sql/new" target="_blank" rel="noopener">数据库还没初始化？打开 Supabase SQL Editor</a></p>
+    </div>
+  </div>
+
+  <div class="boot-screen" id="bootScreen">
+    <div class="boot-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15.5" r="5.2" fill="currentColor"/><path d="M9 24.5h22M12 29h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></div>
+    <p>正在整理今天的节奏</p>
+    <span class="boot-line"><i></i></span>
+  </div>
+
+  <noscript><div class="noscript">日序需要启用 JavaScript 才能运行。</div></noscript>
+  <script src="config.js" defer></script>
+  <script src="vendor/supabase.js" defer></script>
+  <script src="cloud-boot.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
