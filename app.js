@@ -1121,7 +1121,8 @@
     const category = CATEGORY_LABELS[raw.category] ? raw.category : detectCategory(`${raw.title} ${raw.notes || ""}`);
     const priority = [1, 2, 3].includes(Number(raw.priority)) ? Number(raw.priority) : 2;
     const repeat = ["odd", "even", "weekly"].includes(raw.repeat) ? raw.repeat : "";
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(raw.date || "") ? raw.date : null;
+    const rawDate = String(raw.date || "").replace(/\//g, "-");
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
     const startTime = /^\d{1,2}:\d{2}$/.test(raw.startTime || "") ? raw.startTime : null;
     const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "") ? raw.endTime : null;
     const fixed = Boolean(raw.fixed && date && startTime);
@@ -1139,8 +1140,9 @@
         repeatLabel = `${repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : "每周")} · ${occurrences.length} 次`;
       }
     }
-    const deadline = !fixed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.deadline || "")
-      ? String(raw.deadline).slice(0, 16)
+    const deadlineRaw = String(raw.deadline || "").replace(" ", "T");
+    const deadline = !fixed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw)
+      ? deadlineRaw.slice(0, 16)
       : null;
     return {
       title: String(raw.title).trim().slice(0, 80),
