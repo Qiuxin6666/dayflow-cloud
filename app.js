@@ -42,6 +42,8 @@
     quietEnabled: false,
     quietStart: "22:00",
     quietEnd: "08:00",
+    semesterStart: "2026-08-31",
+    semesterWeeks: 19,
     webhook: { enabled: false, type: "auto", url: "", secret: "" }
   };
 
@@ -693,7 +695,7 @@
     );
 
     let range = null;
-    const colonRange = normalized.match(/(\d{1,2})[:：](\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})[:：](\d{2})/);
+    const colonRange = normalized.match(/(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：]\s*(\d{2})/);
     if (colonRange) {
       const prefix = normalized.slice(Math.max(0, colonRange.index - 7), colonRange.index);
       const period = periodFromPrefix(prefix);
@@ -733,7 +735,7 @@
       return { ...range, isRange: true };
     }
 
-    const colon = normalized.match(/(\d{1,2})[:：](\d{2})/);
+    const colon = normalized.match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
     if (colon) {
       const prefix = normalized.slice(Math.max(0, colon.index - 7), colon.index);
       const period = periodFromPrefix(prefix);
@@ -845,7 +847,7 @@
   function detectCategory(text) {
     if (/体检|医院|看病|牙科|牙医|跑步|健身|运动|瑜伽|冥想|散步|吃药|复诊|睡眠|早睡/.test(text)) return "health";
     if (/论文|作业|复习|考试|课程|上课|学习|阅读|背单词|导师|实验|调研|初稿|文献|高数|数学|英语|物理|化学|思政|经济|Python|编程/.test(text)) return "study";
-    if (/会议|开会|评审|客户|项目|汇报|周报|邮件|方案|需求|面试|同事|老板|工作|复盘|数据|组会/.test(text)) return "work";
+    if (/会议|开会|评审|客户|项目|汇报|周报|邮件|方案|需求|面试|同事|老板|工作|复盘|数据|组会|学生会|值班/.test(text)) return "work";
     if (/买|购买|取|快递|缴费|交电费|生日|聚会|朋友|家里|打扫|做饭|预约|理发|银行|旅行|订票|超市/.test(text)) return "life";
     return "other";
   }
@@ -870,13 +872,15 @@
   function cleanTitle(segment) {
     let title = String(segment)
       .replace(/每天|每日|每个月|每月/g, " ")
+      .replace(/每个?单周|每个?双周/g, " ")
+      .replace(/我都要进行|都要进行|我要进行/g, " ")
       .replace(/(大后天|后天|明天|明日|今天|今日|昨天|今晚|明晚|明早|今早)/g, " ")
       .replace(/(下下|下|这|本)?(?:周|星期|礼拜)[一二三四五六日天]/g, " ")
       .replace(/(?:(\d{4})年)?\d{1,2}月\d{1,2}[日号]?/g, " ")
       .replace(/\d{1,2}\s*天后/g, " ")
-      .replace(/(\d{1,2})[:：](\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})[:：](\d{2})/g, " ")
+      .replace(/(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
-      .replace(/(\d{1,2})[:：](\d{2})/g, " ")
+      .replace(/(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
       .replace(/(\d+(?:\.\d+)?)\s*(?:个)?\s*(?:小时|钟头|h|hr|hours?)(?:\s*(\d{1,2})\s*分)?/gi, " ")
       .replace(/([一二两三四五六七八九十]{1,3})\s*(?:个)?\s*小时(?:\s*([一二两三四五六七八九十]{1,3})\s*分)?/g, " ")
@@ -917,6 +921,36 @@
     return pieces.slice(0, 8);
   }
 
+  function recurrenceOccurrences(segment, now, startMinutes, estimate) {
+    const weekdayMatch = segment.match(/(?:周|星期|礼拜)([一二三四五六日天])/);
+    const hasParity = /单周|双周/.test(segment);
+    const everyWeek = /每周|每星期|每个?礼拜/.test(segment);
+    if (!weekdayMatch || startMinutes === null || (!hasParity && !everyWeek)) return null;
+
+    const weekdayIndex = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 }[weekdayMatch[1]];
+    if (weekdayIndex === undefined) return null;
+
+    const parity = /单周/.test(segment) ? "odd" : (/双周/.test(segment) ? "even" : "all");
+    const startSetting = state.settings.semesterStart || "2026-08-31";
+    const semesterStart = keyDate(startSetting) || keyDate("2026-08-31");
+    const semesterWeeks = clamp(Number(state.settings.semesterWeeks) || 19, 1, 30);
+    const diffDays = Math.floor((startOfDay(now).getTime() - startOfDay(semesterStart).getTime()) / 86400000);
+    const currentWeek = Math.max(1, Math.floor(diffDays / 7) + 1);
+    const occurrences = [];
+
+    for (let week = currentWeek; week <= semesterWeeks; week += 1) {
+      if (parity === "odd" && week % 2 === 0) continue;
+      if (parity === "even" && week % 2 !== 0) continue;
+      const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
+      const date = dateKey(day);
+      const start = combineDateTime(date, startMinutes);
+      const end = combineDateTime(date, startMinutes + estimate);
+      if (new Date(start) <= new Date(now.getTime() + 60000)) continue;
+      occurrences.push({ week, date, start, end });
+    }
+    return occurrences;
+  }
+
   function parseSegment(segment, base = new Date()) {
     const now = new Date(base);
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -927,7 +961,7 @@
     const hasBefore = /(之前|以前|截止|ddl|due|前(?=交|完成|提交|发|上传|做|写|给|必须|得))/.test(segment);
     const category = detectCategory(segment);
     const priority = detectPriority(segment);
-    const repeat = /每周|每星期|每个?礼拜/.test(segment) ? "每周" : (/每天|每日/.test(segment) ? "每天" : "");
+    const repeat = /单周/.test(segment) ? "单周" : (/双周/.test(segment) ? "双周" : (/每周|每星期|每个?礼拜/.test(segment) ? "每周" : (/每天|每日/.test(segment) ? "每天" : "")));
 
     let targetDate = dateInfo.key || today;
     let explicitDate = Boolean(dateInfo.key);
@@ -965,9 +999,19 @@
 
     let start = null;
     let end = null;
+    let repeatOccurrences = null;
+    let repeatLabel = "";
     if (fixed && timeInfo && startMinutes !== null) {
       start = combineDateTime(targetDate, startMinutes);
       end = combineDateTime(targetDate, startMinutes + estimate);
+      const occurrences = recurrenceOccurrences(segment, now, startMinutes, estimate);
+      if (occurrences && occurrences.length) {
+        repeatOccurrences = occurrences;
+        targetDate = occurrences[0].date;
+        start = occurrences[0].start;
+        end = occurrences[0].end;
+        repeatLabel = `${repeat || "每周"} · ${occurrences.length} 次`;
+      }
     }
 
     return {
@@ -984,12 +1028,26 @@
       availableFrom,
       reminderLead: null,
       repeat,
+      repeatOccurrences,
+      repeatLabel,
       source: segment
     };
   }
 
   function parseNaturalInput(text, base = new Date()) {
-    return splitSegments(text).map((segment) => parseSegment(segment, base)).filter((draft) => draft.title);
+    const drafts = splitSegments(text).map((segment) => parseSegment(segment, base)).filter((draft) => draft.title);
+    const named = drafts.filter((draft) => draft.title !== "未命名事项");
+    if (named.length && drafts.length > 1) {
+      const fallback = named[named.length - 1];
+      drafts.forEach((draft) => {
+        if (draft.title === "未命名事项") {
+          draft.title = fallback.title;
+          draft.category = detectCategory(fallback.title);
+          draft.notes = `${draft.notes} · ${fallback.title}`;
+        }
+      });
+    }
+    return drafts;
   }
 
   // ---------------------------------------------------------------------------
@@ -2096,13 +2154,34 @@
       const when = whenInput?.value || "";
       if (modeInput?.value === "fixed" && when) {
         const date = dateKey(parseDateTime(when));
-        draft.fixed = true;
-        draft.start = when;
-        draft.end = combineDateTime(date, minutesFromTime(when.slice(11, 16)) + draft.estimate);
-        draft.deadline = null;
-        draft.availableFrom = null;
-        draft.dateKey = date;
+        const newStartMinutes = minutesFromTime(when.slice(11, 16));
+        if (Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length) {
+          const oldFirst = parseDateTime(draft.repeatOccurrences[0].start);
+          const newFirst = parseDateTime(when);
+          const dayShift = Math.round((startOfDay(newFirst).getTime() - startOfDay(oldFirst).getTime()) / 86400000);
+          draft.repeatOccurrences = draft.repeatOccurrences.map((occurrence) => {
+            const shiftedDate = addDaysKey(occurrence.date, dayShift);
+            return {
+              ...occurrence,
+              date: shiftedDate,
+              start: combineDateTime(shiftedDate, newStartMinutes),
+              end: combineDateTime(shiftedDate, newStartMinutes + draft.estimate)
+            };
+          });
+          draft.start = draft.repeatOccurrences[0].start;
+          draft.end = draft.repeatOccurrences[0].end;
+          draft.dateKey = draft.repeatOccurrences[0].date;
+        } else {
+          draft.fixed = true;
+          draft.start = when;
+          draft.end = combineDateTime(date, newStartMinutes + draft.estimate);
+          draft.deadline = null;
+          draft.availableFrom = null;
+          draft.dateKey = date;
+        }
       } else {
+        draft.repeatOccurrences = null;
+        draft.repeatLabel = "";
         draft.fixed = false;
         draft.start = null;
         draft.end = null;
@@ -2130,11 +2209,14 @@
             ? `${dayLabel(draft.availableFrom)}开始`
             : "自动找空档";
       const whenValue = previewDateValue(draft);
+      const repeatInfo = Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length
+        ? `${draft.repeatLabel || "重复"} · ${shortDate(draft.repeatOccurrences[0].date)} 起`
+        : "";
       return `<div class="preview-item" data-draft-index="${index}">
         <span class="preview-index">${pad2(index + 1)}</span>
         <div class="preview-body">
           <input class="preview-title-input" data-draft-title value="${esc(draft.title)}" aria-label="任务标题" maxlength="80">
-          <div class="preview-chips"><span>${draft.fixed ? "固定" : "智能"}</span><span>${esc(dateInfo)}</span><span>${esc(categoryLabel(draft.category))}</span><span>${draft.estimate} 分钟</span>${draft.priority === 1 ? "<span>紧急</span>" : ""}${draft.repeat ? `<span>${draft.repeat}重复 · 先排下一次</span>` : ""}</div>
+          <div class="preview-chips"><span>${draft.fixed ? "固定" : "智能"}</span><span>${esc(dateInfo)}</span><span>${esc(categoryLabel(draft.category))}</span><span>${draft.estimate} 分钟</span>${draft.priority === 1 ? "<span>紧急</span>" : ""}${repeatInfo ? `<span>${esc(repeatInfo)}</span>` : (draft.repeat ? `<span>${draft.repeat}重复 · 先排下一次</span>` : "")}</div>
           <div class="preview-fields">
             <label class="preview-field"><span>类型</span><select data-draft-mode><option value="auto"${draft.fixed ? "" : " selected"}>智能安排</option><option value="fixed"${draft.fixed ? " selected" : ""}>固定时间</option></select></label>
             <label class="preview-field"><span>${draft.fixed ? "开始" : "截止（可空）"}</span><input type="datetime-local" data-draft-when value="${esc(whenValue)}"></label>
@@ -2171,25 +2253,34 @@
   function commitDrafts(drafts) {
     if (!drafts.length) return;
     const now = new Date().toISOString();
+    let added = 0;
     drafts.forEach((draft) => {
-      const task = normalizeTask({
-        id: uid(),
-        title: draft.title,
-        notes: draft.notes,
-        category: draft.category,
-        priority: draft.priority,
-        estimate: draft.estimate,
-        fixed: draft.fixed,
-        start: draft.start,
-        end: draft.end,
-        deadline: draft.deadline,
-        availableFrom: draft.availableFrom,
-        reminderLead: draft.reminderLead,
-        done: false,
-        createdAt: now,
-        demo: false
+      const occurrences = Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length
+        ? draft.repeatOccurrences
+        : [null];
+      occurrences.forEach((occurrence) => {
+        const task = normalizeTask({
+          id: uid(),
+          title: draft.title,
+          notes: draft.notes + (draft.repeatLabel ? ` · ${draft.repeatLabel}` : ""),
+          category: draft.category,
+          priority: draft.priority,
+          estimate: draft.estimate,
+          fixed: draft.fixed,
+          start: occurrence?.start || draft.start,
+          end: occurrence?.end || draft.end,
+          deadline: occurrence ? null : draft.deadline,
+          availableFrom: occurrence ? null : draft.availableFrom,
+          reminderLead: draft.reminderLead,
+          done: false,
+          createdAt: now,
+          demo: false
+        });
+        if (task) {
+          state.tasks.push(task);
+          added += 1;
+        }
       });
-      if (task) state.tasks.push(task);
     });
     const result = autoPlan();
     state.meta.seeded = true;
@@ -2200,9 +2291,11 @@
     $("#captureInput").value = "";
     renderAll();
     const message = result.unscheduled
-      ? `${result.scheduled} 件已排入行程，${result.unscheduled} 件暂时排不下。`
-      : `${result.scheduled} 件事都找到了合适的位置。`;
-    const repeatNote = drafts.some((draft) => draft.repeat) ? " 重复事项目前先排最近一次。" : "";
+      ? `${added} 件已加入行程，${result.unscheduled} 件暂时排不下。`
+      : `${added} 件已加入行程。`;
+    const repeatNote = drafts.some((draft) => Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length)
+      ? " 重复事项已按单/双周展开。"
+      : "";
     showToast("已经替你排好", message + repeatNote, result.unscheduled ? "warn" : "success");
   }
 
