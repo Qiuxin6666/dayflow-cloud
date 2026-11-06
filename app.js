@@ -1197,7 +1197,8 @@
 5. “每个单周周一” repeat=odd；“每个双周周三” repeat=even；“每周X” repeat=weekly；date 填从现在开始的第一次发生日期，不要填过去日期。
 6. 普通一次性日程 repeat=none。
 7. 时间用 24 小时制；不要编造用户没说的信息。
-8. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。`;
+8. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
+示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -1213,6 +1214,7 @@
         temperature: 0.1,
         max_tokens: 1800,
         response_format: { type: "json_object" },
+        thinking: { type: "disabled" },
         stream: false
       })
     });
