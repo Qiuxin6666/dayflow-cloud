@@ -12,6 +12,9 @@
 
   const LS_KEY = "dayflow.state.v2";
   const CLOUD_MODE = Boolean(window.DAYFLOW_CLOUD_MODE);
+  const AI_KEY_STORAGE = "dayflow.ai.key";
+  const AI_MODEL_STORAGE = "dayflow.ai.model";
+  const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1051,6 +1054,195 @@
   }
 
   // ---------------------------------------------------------------------------
+  // optional DeepSeek AI parser (browser-side, key stays in this browser)
+
+  function aiKey() {
+    return (localStorage.getItem(AI_KEY_STORAGE) || "").trim();
+  }
+
+  function aiModel() {
+    return localStorage.getItem(AI_MODEL_STORAGE) || "deepseek-flash";
+  }
+
+  function aiEnabled() {
+    return aiKey() && localStorage.getItem(AI_ENABLED_STORAGE) !== "false";
+  }
+
+  function updateAITag() {
+    const tag = $("#aiTag");
+    const label = $("#captureSubmitLabel");
+    if (tag) tag.innerHTML = `<i></i>${aiEnabled() ? "AI 增强解析" : "自然语言解析"}`;
+    if (label) label.textContent = aiEnabled() ? "AI 帮我安排" : "帮我安排";
+  }
+
+  function renderAISettings() {
+    const keyInput = $("#aiApiKey");
+    const modelInput = $("#aiModel");
+    const enabledInput = $("#aiEnabled");
+    const status = $("#aiStatus");
+    if (!keyInput || !modelInput || !enabledInput || !status) return;
+    keyInput.value = "";
+    keyInput.placeholder = aiKey() ? "已保存（留空保持不变）" : "sk-...";
+    modelInput.value = aiModel();
+    enabledInput.checked = aiEnabled();
+    const on = aiEnabled();
+    status.textContent = aiKey() ? (on ? "已启用" : "已保存，未启用") : "未配置";
+    status.classList.toggle("is-on", Boolean(on));
+    updateAITag();
+  }
+
+  function expandAIOccurrences(firstDate, startTime, endTime, repeat) {
+    if (!/^(odd|even|weekly)$/.test(repeat || "")) return [];
+    const startMinutes = minutesFromTime(startTime, 9 * 60);
+    const endMinutes = minutesFromTime(endTime, startMinutes + 45);
+    const estimate = Math.max(15, endMinutes - startMinutes);
+    const semesterStart = keyDate(state.settings.semesterStart || "2026-08-31") || keyDate("2026-08-31");
+    const semesterWeeks = clamp(Number(state.settings.semesterWeeks) || 19, 1, 30);
+    const first = keyDate(firstDate);
+    if (!first) return [];
+    const firstWeek = Math.max(1, Math.floor((startOfDay(first).getTime() - startOfDay(semesterStart).getTime()) / (7 * 86400000)) + 1);
+    const weekdayIndex = (first.getDay() + 6) % 7;
+    const occurrences = [];
+    for (let week = firstWeek; week <= semesterWeeks; week += 1) {
+      if (repeat === "odd" && week % 2 === 0) continue;
+      if (repeat === "even" && week % 2 !== 0) continue;
+      const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
+      const date = dateKey(day);
+      if (date < firstDate) continue;
+      const start = combineDateTime(date, startMinutes);
+      if (new Date(start) <= new Date(Date.now() + 60000)) continue;
+      occurrences.push({ week, date, start, end: combineDateTime(date, startMinutes + estimate) });
+    }
+    return occurrences;
+  }
+
+  function normalizeAIDraft(raw, sourceText) {
+    if (!raw || typeof raw !== "object" || !raw.title) return null;
+    const category = CATEGORY_LABELS[raw.category] ? raw.category : detectCategory(`${raw.title} ${raw.notes || ""}`);
+    const priority = [1, 2, 3].includes(Number(raw.priority)) ? Number(raw.priority) : 2;
+    const repeat = ["odd", "even", "weekly"].includes(raw.repeat) ? raw.repeat : "";
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(raw.date || "") ? raw.date : null;
+    const startTime = /^\d{1,2}:\d{2}$/.test(raw.startTime || "") ? raw.startTime : null;
+    const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "") ? raw.endTime : null;
+    const fixed = Boolean(raw.fixed && date && startTime);
+    let estimate = clamp(Number(raw.estimate) || (fixed && endTime ? minutesFromTime(endTime) - minutesFromTime(startTime) : 45), 15, 240);
+    let start = fixed ? `${date}T${startTime}` : null;
+    let end = fixed ? combineDateTime(date, minutesFromTime(startTime) + estimate) : null;
+    let repeatOccurrences = null;
+    let repeatLabel = "";
+    if (fixed && repeat) {
+      const occurrences = expandAIOccurrences(date, startTime, endTime || timeFromMinutes(minutesFromTime(startTime) + estimate), repeat);
+      if (occurrences.length) {
+        repeatOccurrences = occurrences;
+        start = occurrences[0].start;
+        end = occurrences[0].end;
+        repeatLabel = `${repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : "每周")} · ${occurrences.length} 次`;
+      }
+    }
+    const deadline = !fixed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.deadline || "")
+      ? String(raw.deadline).slice(0, 16)
+      : null;
+    return {
+      title: String(raw.title).trim().slice(0, 80),
+      notes: String(raw.notes || sourceText || "").slice(0, 1000),
+      category,
+      priority,
+      estimate,
+      fixed,
+      dateKey: repeatOccurrences ? repeatOccurrences[0].date : (date || todayKey()),
+      start,
+      end,
+      deadline,
+      availableFrom: null,
+      reminderLead: null,
+      repeat: repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : (repeat === "weekly" ? "每周" : "")),
+      repeatOccurrences,
+      repeatLabel,
+      source: sourceText
+    };
+  }
+
+  function extractAIJson(content) {
+    const text = String(content || "").trim();
+    try { return JSON.parse(text); } catch { /* continue */ }
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) {
+      try { return JSON.parse(fenced[1].trim()); } catch { /* continue */ }
+    }
+    const first = text.indexOf("{");
+    const last = text.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      try { return JSON.parse(text.slice(first, last + 1)); } catch { /* continue */ }
+    }
+    throw new Error("AI 返回的不是有效 JSON");
+  }
+
+  async function parseWithAI(text) {
+    const key = aiKey();
+    if (!key) throw new Error("没有配置 DeepSeek API Key");
+    const now = new Date();
+    const semesterStart = state.settings.semesterStart || "2026-08-31";
+    const system = `你是中文日程解析器。把用户的话解析成结构化任务，只输出 JSON，不要 Markdown。
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
+学期第一周周一：${semesterStart}
+学期总周数：${state.settings.semesterWeeks || 19}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even"}]}
+规则：
+1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。
+2. 有明确开始时间（如“14:10-15:40”“下午3点”）时 fixed=true，填 date/startTime/endTime；没有结束时间就按合理用时估算。
+3. “周五前交”“截止到……”这类是截止时间：fixed=false，填 deadline，estimate 为预计用时。
+4. 只有日期没有具体时间：fixed=false，deadline 填该日 18:00，除非用户明确说是会议/约见。
+5. “每个单周周一” repeat=odd；“每个双周周三” repeat=even；“每周X” repeat=weekly；date 填从现在开始的第一次发生日期，不要填过去日期。
+6. 普通一次性日程 repeat=none。
+7. 时间用 24 小时制；不要编造用户没说的信息。
+8. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。`;
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
+      body: JSON.stringify({
+        model: aiModel(),
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: text }
+        ],
+        temperature: 0.1,
+        max_tokens: 1800,
+        response_format: { type: "json_object" },
+        stream: false
+      })
+    });
+    if (!response.ok) {
+      let detail = "";
+      try { detail = (await response.json())?.error?.message || ""; } catch { /* ignore */ }
+      throw new Error(detail || `AI 接口返回 ${response.status}`);
+    }
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    const payload = extractAIJson(content);
+    const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    const drafts = tasks.map((task) => normalizeAIDraft(task, text)).filter(Boolean);
+    if (!drafts.length) throw new Error("AI 没有解析出任务");
+    return drafts;
+  }
+
+  function setCaptureBusy(busy) {
+    const button = $("#captureSubmit");
+    const label = $("#captureSubmitLabel");
+    if (!button || !label) return;
+    button.disabled = busy;
+    if (busy) {
+      button.dataset.label = label.textContent;
+      label.textContent = "AI 正在理解…";
+    } else if (button.dataset.label) {
+      label.textContent = button.dataset.label;
+      delete button.dataset.label;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // reminders / notifications
 
   function isQuietNow(now = new Date()) {
@@ -1366,6 +1558,7 @@
 
     renderServerStatus();
     renderBell();
+    updateAITag();
   }
 
   function renderServerStatus() {
@@ -2084,6 +2277,7 @@
     if (restartHint) restartHint.hidden = CLOUD_MODE;
     const testWebhook = $("#testWebhookBtn");
     if (testWebhook) testWebhook.disabled = !serverMode && !CLOUD_MODE;
+    renderAISettings();
   }
 
   // ---------------------------------------------------------------------------
@@ -2235,7 +2429,7 @@
       <div class="preview-actions"><button class="btn btn--ghost" data-preview-cancel>取消</button><button class="btn btn--primary" data-preview-confirm>全部加入并排程</button></div>`;
   }
 
-  function handleCaptureSubmit() {
+  async function handleCaptureSubmit() {
     const input = $("#captureInput");
     const text = input.value.trim();
     if (!text) {
@@ -2243,7 +2437,22 @@
       showToast("先写点什么", "比如：明天下午3点和导师开会。", "warn");
       return;
     }
-    parsedDrafts = parseNaturalInput(text);
+    const useAI = aiEnabled();
+    if (useAI) setCaptureBusy(true);
+    try {
+      if (useAI) {
+        try {
+          parsedDrafts = await parseWithAI(text);
+        } catch (error) {
+          parsedDrafts = parseNaturalInput(text);
+          showToast("AI 解析失败，已用本地规则", String(error.message || error), "warn", 9000);
+        }
+      } else {
+        parsedDrafts = parseNaturalInput(text);
+      }
+    } finally {
+      setCaptureBusy(false);
+    }
     if (!parsedDrafts.length) {
       showToast("这次没太听懂", "试试带上时间，例如「明天下午3点开会」。", "warn");
     }
@@ -2999,6 +3208,47 @@
     });
     $("#openWebhookHelpBtn").addEventListener("click", () => {
       showToast("手机消息怎么配置", "最省事：点「生成 ntfy 主题」，手机装 ntfy App 后订阅这个主题。企业微信/飞书/钉钉则复制群机器人 Webhook 地址。", "default", 14000);
+    });
+    $("#aiApiKey")?.addEventListener("change", (event) => {
+      const value = event.target.value.trim();
+      if (!value) return;
+      localStorage.setItem(AI_KEY_STORAGE, value);
+      localStorage.setItem(AI_ENABLED_STORAGE, "true");
+      renderAISettings();
+      showToast("AI Key 已保存", "只保存在这台浏览器。现在可以在首页用自然语言安排日程了。", "success");
+    });
+    $("#aiModel")?.addEventListener("change", (event) => {
+      localStorage.setItem(AI_MODEL_STORAGE, event.target.value);
+      showToast("AI 模型已切换", event.target.value, "success", 3000);
+    });
+    $("#aiEnabled")?.addEventListener("change", (event) => {
+      localStorage.setItem(AI_ENABLED_STORAGE, event.target.checked ? "true" : "false");
+      updateAITag();
+      renderAISettings();
+    });
+    $("#clearAIKey")?.addEventListener("click", () => {
+      localStorage.removeItem(AI_KEY_STORAGE);
+      localStorage.removeItem(AI_ENABLED_STORAGE);
+      renderAISettings();
+      showToast("已清除 AI Key", "首页会回退到本地规则解析。", "default");
+    });
+    $("#testAI")?.addEventListener("click", async () => {
+      if (!aiKey()) {
+        showToast("还没有配置 AI Key", "先在 Settings 里填入 DeepSeek API Key。", "warn");
+        return;
+      }
+      const button = $("#testAI");
+      setButtonBusy(button, true, "测试中…");
+      try {
+        const drafts = await parseWithAI("明天下午3点和导师开会，地点在图书馆");
+        parsedDrafts = drafts;
+        renderParsePreview();
+        showToast("AI 解析已连通", `测试句子解析出 ${drafts.length} 件事，已在首页预览。`, "success", 8000);
+      } catch (error) {
+        showToast("AI 测试失败", String(error.message || error), "warn", 10000);
+      } finally {
+        setButtonBusy(button, false);
+      }
     });
     $("#exportBtn").addEventListener("click", exportData);
     $("#importBtn").addEventListener("click", () => $("#importFile").click());

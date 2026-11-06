@@ -162,7 +162,7 @@
                 <div class="capture-head">
                   <span class="capture-mark"><svg class="icon"><use href="#i-sparkles"></use></svg></span>
                   <div class="capture-title"><span>QUICK CAPTURE</span><h2>一句话，把事丢给我</h2></div>
-                  <span class="ai-tag"><i></i>自然语言解析</span>
+                  <span class="ai-tag" id="aiTag"><i></i>自然语言解析</span>
                 </div>
                 <form id="captureForm">
                   <label class="sr-only" for="captureInput">输入日程或任务</label>
@@ -173,8 +173,8 @@
                       <button type="button" data-example="周五前交实验报告">周五前交报告</button>
                       <button type="button" data-example="今晚8点跑步30分钟">今晚跑步</button>
                     </div>
-                    <button class="capture-submit" type="submit" aria-label="解析并添加">
-                      <span>帮我安排</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg>
+                    <button class="capture-submit" type="submit" aria-label="解析并添加" id="captureSubmit">
+                      <span id="captureSubmitLabel">帮我安排</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg>
                     </button>
                   </div>
                 </form>
@@ -416,7 +416,17 @@
             </section>
 
             <section class="card setting-card">
-              <div class="setting-head"><span>06</span><div><h3>数据</h3><p>你的数据默认只存在本机，可以随时导出备份。</p></div></div>
+              <div class="setting-head"><span>06</span><div><h3>AI 智能解析</h3><p>用 DeepSeek 理解复杂、口语化的日程描述；失败时自动回退本地规则。</p></div><span class="pill" id="aiStatus">未配置</span></div>
+              <div class="form-grid">
+                <label class="field field--full"><span>DeepSeek API Key</span><input type="password" id="aiApiKey" placeholder="sk-..." autocomplete="off"><small>只保存在这台浏览器的 localStorage，不会上传到 Supabase，也不会写进代码。手机和电脑需要分别填一次。</small></label>
+                <label class="field"><span>模型</span><select id="aiModel"><option value="deepseek-flash">deepseek-flash（推荐，快）</option><option value="deepseek-chat">deepseek-chat</option></select></label>
+                <div class="field"><span>启用 AI 解析</span><div class="switch-line"><label class="switch"><input type="checkbox" id="aiEnabled"><span></span></label><small>没有 Key 时自动用本地规则</small></div></div>
+              </div>
+              <div class="inline-actions"><button class="btn btn--soft" id="testAI"><svg class="icon"><use href="#i-sparkles"></use></svg>测试 AI</button><button class="btn btn--ghost" id="clearAIKey">清除 Key</button><a class="btn btn--ghost" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">获取 API Key</a></div>
+            </section>
+
+            <section class="card setting-card">
+              <div class="setting-head"><span>07</span><div><h3>数据</h3><p>你的数据默认只存在本机，可以随时导出备份。</p></div></div>
               <div class="data-row"><span>数据文件</span><code id="dataPath">浏览器本地存储</code></div>
               <div class="data-stats"><div><strong id="dataTaskCount">0</strong><span>任务</span></div><div><strong id="dataEventCount">0</strong><span>提醒记录</span></div><div><strong id="dataDays">0</strong><span>使用天数</span></div></div>
               <div class="inline-actions"><button class="btn btn--soft" id="exportBtn"><svg class="icon"><use href="#i-download"></use></svg>导出备份</button><button class="btn btn--soft" id="importBtn"><svg class="icon"><use href="#i-upload"></use></svg>导入备份</button><button class="btn btn--danger-ghost" id="resetBtn"><svg class="icon"><use href="#i-trash"></use></svg>清空所有数据</button><input type="file" id="importFile" accept="application/json" hidden></div>
