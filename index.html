@@ -19,6 +19,7 @@
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.94 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
     <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
     <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
@@ -168,14 +169,23 @@
                   <label class="sr-only" for="captureInput">输入日程或任务</label>
                   <textarea id="captureInput" rows="2" placeholder="例：明天下午 3 点和导师开会，周五前交实验报告"></textarea>
                   <div class="capture-tools">
+                    <div class="capture-mode" id="captureMode" aria-label="输入模式">
+                      <button type="button" data-capture-mode="add" class="is-active">新建</button>
+                      <button type="button" data-capture-mode="manage">管理日程</button>
+                    </div>
                     <div class="capture-examples" aria-label="示例输入">
                       <button type="button" data-example="明天下午3点和导师开会">明天下午3点开会</button>
                       <button type="button" data-example="周五前交实验报告">周五前交报告</button>
                       <button type="button" data-example="今晚8点跑步30分钟">今晚跑步</button>
                     </div>
-                    <button class="capture-submit" type="submit" aria-label="解析并添加" id="captureSubmit">
-                      <span id="captureSubmitLabel">帮我安排</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg>
-                    </button>
+                    <div class="capture-action-row">
+                      <button class="voice-btn" type="button" id="voiceBtn" aria-label="语音输入" title="语音输入">
+                        <svg class="icon"><use href="#i-mic"></use></svg>
+                      </button>
+                      <button class="capture-submit" type="submit" aria-label="解析并添加" id="captureSubmit">
+                        <span id="captureSubmitLabel">帮我安排</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg>
+                      </button>
+                    </div>
                   </div>
                 </form>
                 <div class="parse-preview" id="parsePreview" hidden></div>

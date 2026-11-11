@@ -287,6 +287,16 @@ svg { display: block; }
 .capture-card textarea { display: block; width: 100%; min-height: 66px; padding: 4px 0; border: 0; outline: 0; resize: none; color: var(--cream); background: transparent; font-size: 17px; line-height: 1.65; letter-spacing: 0.01em; }
 .capture-card textarea::placeholder { color: rgba(251, 247, 238, 0.32); }
 .capture-tools { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-top: 12px; }
+.capture-mode { display: inline-flex; flex: 0 0 auto; padding: 3px; border: 1px solid rgba(251,247,238,.12); border-radius: 9px; background: rgba(251,247,238,.04); }
+.capture-mode button { height: 25px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: rgba(251,247,238,.46); font-size: 9.5px; }
+.capture-mode button.is-active { background: rgba(220,239,150,.13); color: var(--lime); }
+.capture-action-row { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.voice-btn { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid rgba(251,247,238,.14); border-radius: 11px; background: rgba(251,247,238,.05); color: rgba(251,247,238,.72); transition: color 160ms, background 160ms, border-color 160ms; }
+.voice-btn .icon { width: 17px; height: 17px; }
+.voice-btn:hover { color: var(--cream); background: rgba(251,247,238,.1); }
+.voice-btn.is-listening { color: #ffb4a5; border-color: rgba(255,122,95,.55); background: rgba(255,122,95,.14); animation: voicePulse 1.2s ease-in-out infinite; }
+@keyframes voicePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,122,95,.22); } 50% { box-shadow: 0 0 0 7px rgba(255,122,95,0); } }
+.preview-action-title { display: block; color: var(--cream); font-size: 12px; font-weight: 600; }
 .capture-examples { display: flex; flex-wrap: wrap; gap: 6px; }
 .capture-examples button { height: 28px; padding: 0 10px; border: 1px solid rgba(251, 247, 238, 0.12); border-radius: 8px; background: rgba(251, 247, 238, 0.045); color: rgba(251, 247, 238, 0.48); font-size: 9.5px; transition: color 160ms, background 160ms; }
 .capture-examples button:hover { color: var(--cream); background: rgba(251, 247, 238, 0.09); }
@@ -838,6 +848,9 @@ svg { display: block; }
   .capture-card { padding: 20px 18px 14px; border-radius: 20px; }
   .capture-card textarea { font-size: 15px; min-height: 60px; }
   .capture-tools { flex-direction: column; align-items: stretch; }
+  .capture-mode { align-self: flex-start; }
+  .capture-action-row { width: 100%; }
+  .capture-action-row .capture-submit { flex: 1; }
   .capture-submit { justify-content: center; width: 100%; }
   .capture-examples { gap: 5px; }
   .ai-tag { display: none; }

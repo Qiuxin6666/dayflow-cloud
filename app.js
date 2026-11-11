@@ -57,6 +57,10 @@
   let dayDate = todayKey();
   let weekStartKey = dateKey(startOfWeek(new Date()));
   let parsedDrafts = [];
+  let parsedActions = [];
+  let managementReply = "";
+  let captureMode = "add";
+  let voiceRecognition = null;
   let currentMode = "auto";
   let currentCategory = "work";
   let currentPriority = 2;
@@ -1071,8 +1075,87 @@
   function updateAITag() {
     const tag = $("#aiTag");
     const label = $("#captureSubmitLabel");
-    if (tag) tag.innerHTML = `<i></i>${aiEnabled() ? "AI 增强解析" : "自然语言解析"}`;
-    if (label) label.textContent = aiEnabled() ? "AI 帮我安排" : "帮我安排";
+    const manage = captureMode === "manage";
+    if (tag) tag.innerHTML = `<i></i>${manage ? "AI 日程管理" : (aiEnabled() ? "AI 增强解析" : "自然语言解析")}`;
+    if (label) label.textContent = manage ? "执行修改" : (aiEnabled() ? "AI 帮我安排" : "帮我安排");
+  }
+
+  function setCaptureMode(mode) {
+    captureMode = mode === "manage" ? "manage" : "add";
+    $$("#captureMode button").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.captureMode === captureMode);
+    });
+    const input = $("#captureInput");
+    if (input) {
+      input.placeholder = captureMode === "manage"
+        ? "例：把 11 月 18 日的学生会值班改到周四 10 点；或删除明天下午的会议"
+        : "例：明天下午 3 点和导师开会，周五前交实验报告";
+      input.focus();
+    }
+    const examples = $(".capture-examples");
+    if (examples) examples.hidden = captureMode === "manage";
+    parsedDrafts = [];
+    parsedActions = [];
+    managementReply = "";
+    $("#parsePreview").hidden = true;
+    updateAITag();
+  }
+
+  function setVoiceState(active) {
+    const button = $("#voiceBtn");
+    if (!button) return;
+    button.classList.toggle("is-listening", active);
+    button.setAttribute("aria-label", active ? "停止语音输入" : "语音输入");
+  }
+
+  function toggleVoiceInput() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      showToast("这个浏览器不支持语音识别", "请用 Chrome、Edge 或较新的 Safari；也可以直接打字。", "warn", 9000);
+      return;
+    }
+    if (voiceRecognition) {
+      try { voiceRecognition.stop(); } catch { /* ignore */ }
+      voiceRecognition = null;
+      setVoiceState(false);
+      return;
+    }
+    const recognition = new Recognition();
+    voiceRecognition = recognition;
+    recognition.lang = "zh-CN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setVoiceState(true);
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      const input = $("#captureInput");
+      if (input) input.value = transcript.trim();
+    };
+    recognition.onerror = (event) => {
+      setVoiceState(false);
+      voiceRecognition = null;
+      const reason = event.error === "not-allowed"
+        ? "浏览器没有麦克风权限，请在地址栏允许麦克风。"
+        : `语音识别出错：${event.error || "unknown"}`;
+      showToast("语音输入失败", reason, "warn", 8000);
+    };
+    recognition.onend = () => {
+      setVoiceState(false);
+      voiceRecognition = null;
+      $("#captureInput")?.focus();
+    };
+    try {
+      recognition.start();
+      showToast("正在听…", "说完后可以检查文字，再点「AI 帮我安排」。", "default", 4000);
+    } catch (error) {
+      setVoiceState(false);
+      voiceRecognition = null;
+      showToast("无法启动语音输入", String(error.message || error), "warn");
+    }
   }
 
   function renderAISettings() {
@@ -1122,13 +1205,36 @@
     const priority = [1, 2, 3].includes(Number(raw.priority)) ? Number(raw.priority) : 2;
     const repeat = ["odd", "even", "weekly"].includes(raw.repeat) ? raw.repeat : "";
     const rawDate = String(raw.date || "").replace(/\//g, "-");
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
-    const startTime = /^\d{1,2}:\d{2}$/.test(raw.startTime || "") ? raw.startTime : null;
-    const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "") ? raw.endTime : null;
-    const fixed = Boolean(raw.fixed && date && startTime);
-    let estimate = clamp(Number(raw.estimate) || (fixed && endTime ? minutesFromTime(endTime) - minutesFromTime(startTime) : 45), 15, 240);
+    const directStart = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.start || "") ? String(raw.start).slice(0, 16) : null;
+    const directEnd = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.end || "") ? String(raw.end).slice(0, 16) : null;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? rawDate
+      : (directStart ? directStart.slice(0, 10) : null);
+    const startTime = /^\d{1,2}:\d{2}$/.test(raw.startTime || "")
+      ? raw.startTime
+      : (directStart ? directStart.slice(11, 16) : null);
+    const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "")
+      ? raw.endTime
+      : (directEnd ? directEnd.slice(11, 16) : null);
+    const deadlineRaw = String(raw.deadline || "").replace(" ", "T");
+    const hasDeadline = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw);
+    // If the model returned an explicit start time, honour it instead of
+    // letting autoPlan move the item to an arbitrary "free slot".
+    const fixed = Boolean(date && startTime && (raw.fixed === true || !hasDeadline));
+    const rangeMinutes = fixed && endTime
+      ? minutesFromTime(endTime) - minutesFromTime(startTime)
+      : null;
+    let estimate = clamp(
+      rangeMinutes && rangeMinutes >= 15
+        ? rangeMinutes
+        : (Number(raw.estimate) || 45),
+      15,
+      240
+    );
     let start = fixed ? `${date}T${startTime}` : null;
-    let end = fixed ? combineDateTime(date, minutesFromTime(startTime) + estimate) : null;
+    let end = fixed
+      ? (endTime ? `${date}T${endTime}` : combineDateTime(date, minutesFromTime(startTime) + estimate))
+      : null;
     let repeatOccurrences = null;
     let repeatLabel = "";
     if (fixed && repeat) {
@@ -1140,8 +1246,7 @@
         repeatLabel = `${repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : "每周")} · ${occurrences.length} 次`;
       }
     }
-    const deadlineRaw = String(raw.deadline || "").replace(" ", "T");
-    const deadline = !fixed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw)
+    const deadline = !fixed && hasDeadline
       ? deadlineRaw.slice(0, 16)
       : null;
     return {
@@ -1179,26 +1284,9 @@
     throw new Error("AI 返回的不是有效 JSON");
   }
 
-  async function parseWithAI(text) {
+  async function callDeepSeekJson(system, user) {
     const key = aiKey();
     if (!key) throw new Error("没有配置 DeepSeek API Key");
-    const now = new Date();
-    const semesterStart = state.settings.semesterStart || "2026-08-31";
-    const system = `你是中文日程解析器。把用户的话解析成结构化任务，只输出 JSON，不要 Markdown。
-当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
-学期第一周周一：${semesterStart}
-学期总周数：${state.settings.semesterWeeks || 19}
-输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even"}]}
-规则：
-1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。
-2. 有明确开始时间（如“14:10-15:40”“下午3点”）时 fixed=true，填 date/startTime/endTime；没有结束时间就按合理用时估算。
-3. “周五前交”“截止到……”这类是截止时间：fixed=false，填 deadline，estimate 为预计用时。
-4. 只有日期没有具体时间：fixed=false，deadline 填该日 18:00，除非用户明确说是会议/约见。
-5. “每个单周周一” repeat=odd；“每个双周周三” repeat=even；“每周X” repeat=weekly；date 填从现在开始的第一次发生日期，不要填过去日期。
-6. 普通一次性日程 repeat=none。
-7. 时间用 24 小时制；不要编造用户没说的信息。
-8. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
-示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -1209,7 +1297,7 @@
         model: aiModel(),
         messages: [
           { role: "system", content: system },
-          { role: "user", content: text }
+          { role: "user", content: user }
         ],
         temperature: 0.1,
         max_tokens: 1800,
@@ -1224,12 +1312,133 @@
       throw new Error(detail || `AI 接口返回 ${response.status}`);
     }
     const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    const payload = extractAIJson(content);
+    return extractAIJson(data?.choices?.[0]?.message?.content);
+  }
+
+  async function parseWithAI(text) {
+    const now = new Date();
+    const semesterStart = state.settings.semesterStart || "2026-08-31";
+    const calendar = Array.from({ length: 21 }, (_, i) => {
+      const key = addDaysKey(todayKey(), i);
+      return `${key} ${weekdayLabel(key)}`;
+    }).join("；");
+    const system = `你是中文日程解析器。把用户的话解析成结构化任务，只输出 JSON，不要 Markdown。
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
+学期第一周周一：${semesterStart}
+学期总周数：${state.settings.semesterWeeks || 19}
+未来 21 天日历：${calendar}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even"}]}
+规则：
+1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。
+2. 有明确开始时间（如“14:10-15:40”“下午3点”）时 fixed=true，填 date/startTime/endTime；没有结束时间就按合理用时估算。
+3. “周五前交”“截止到……”这类是截止时间：fixed=false，填 deadline，estimate 为预计用时。
+4. 只有日期没有具体时间：fixed=false，deadline 填该日 18:00，除非用户明确说是会议/约见。
+5. “每个单周周一” repeat=odd；“每个双周周三” repeat=even；“每周X” repeat=weekly；date 填从现在开始的第一次发生日期，不要填过去日期。
+6. “明天/后天/下周三/这周五”等相对日期，必须按上面的 21 天日历换算，并核对星期几，不要算错一天。
+7. 普通一次性日程 repeat=none。
+8. 时间用 24 小时制；不要编造用户没说的信息。
+9. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
+示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
+    const payload = await callDeepSeekJson(system, text);
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
     const drafts = tasks.map((task) => normalizeAIDraft(task, text)).filter(Boolean);
     if (!drafts.length) throw new Error("AI 没有解析出任务");
     return drafts;
+  }
+
+  function aiTaskContext() {
+    const now = new Date();
+    const from = new Date(now.getTime() - 7 * 86400000);
+    const to = new Date(now.getTime() + 90 * 86400000);
+    return state.tasks
+      .filter((task) => {
+        const anchor = parseDateTime(task.start) || parseDateTime(task.deadline);
+        return !task.done && (!anchor || (anchor >= from && anchor <= to));
+      })
+      .sort((a, b) => String(a.start || a.deadline || "").localeCompare(String(b.start || b.deadline || "")))
+      .slice(0, 120)
+      .map((task) => ({
+        id: task.id,
+        title: task.title,
+        start: task.start,
+        end: task.end,
+        deadline: task.deadline,
+        fixed: task.fixed,
+        category: task.category,
+        estimate: task.estimate,
+        notes: task.notes
+      }));
+  }
+
+  function normalizeAIChanges(changes, task) {
+    const source = changes && typeof changes === "object" ? changes : {};
+    const out = {};
+    if (typeof source.title === "string" && source.title.trim()) out.title = source.title.trim().slice(0, 80);
+    if (typeof source.notes === "string") out.notes = source.notes.slice(0, 1000);
+    if (CATEGORY_LABELS[source.category]) out.category = source.category;
+    if ([1, 2, 3].includes(Number(source.priority))) out.priority = Number(source.priority);
+    if (source.estimate !== undefined && Number(source.estimate) >= 15) out.estimate = clamp(Number(source.estimate), 15, 240);
+
+    const rawDate = String(source.date || "").replace(/\//g, "-");
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
+    const startTime = /^\d{1,2}:\d{2}$/.test(source.startTime || "") ? source.startTime : null;
+    const endTime = /^\d{1,2}:\d{2}$/.test(source.endTime || "") ? source.endTime : null;
+    let start = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(source.start || "") ? String(source.start).slice(0, 16) : null;
+    let end = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(source.end || "") ? String(source.end).slice(0, 16) : null;
+    if (!start && date && startTime) start = `${date}T${startTime}`;
+    if (!end && date && endTime) end = `${date}T${endTime}`;
+    if (!end && start) {
+      const estimate = out.estimate || Number(task.estimate) || 45;
+      end = combineDateTime(dateKey(parseDateTime(start)), minutesFromTime(start.slice(11, 16)) + estimate);
+    }
+    if (start) {
+      out.start = start;
+      out.end = end;
+      out.fixed = true;
+      out.deadline = null;
+    } else if (source.fixed === false) {
+      out.fixed = false;
+      out.start = null;
+      out.end = null;
+    }
+    const deadlineRaw = String(source.deadline || "").replace(" ", "T");
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw)) {
+      out.deadline = deadlineRaw.slice(0, 16);
+      out.fixed = false;
+      out.start = null;
+      out.end = null;
+    }
+    return out;
+  }
+
+  async function parseManagementWithAI(text) {
+    const now = new Date();
+    const tasks = aiTaskContext();
+    const system = `你是日序的日程管理助手。用户会要求修改或删除已有日程。你只能操作下面给出的任务 id，不能编造 id，也不能新增任务。
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
+只输出 JSON，不要 Markdown，格式：
+{"reply":"给用户的一句中文说明","actions":[{"type":"delete","taskId":"..."},{"type":"update","taskId":"...","changes":{"title":"新标题","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}}]}
+规则：
+1. 先根据标题、日期、时间匹配任务；匹配不确定时 actions 为空，reply 问清楚。
+2. 用户说“删除/取消/去掉” -> delete；说“改到/换成/提前/推迟/修改” -> update。
+3. 改时间必须输出完整本地时间 start/end；如果只改标题或分类，只输出对应字段。
+4. 用户说“所有/每次/全部单周”时，把匹配到的每个任务 id 都输出一条 action。
+5. 不要修改无关任务；不要返回 add。
+6. 当前日程：${JSON.stringify(tasks)}`;
+    const payload = await callDeepSeekJson(system, text);
+    const actions = Array.isArray(payload.actions) ? payload.actions : [];
+    const normalized = [];
+    actions.slice(0, 30).forEach((action) => {
+      const task = state.tasks.find((item) => item.id === action.taskId);
+      if (!task) return;
+      if (action.type === "delete") {
+        normalized.push({ type: "delete", taskId: task.id, before: task });
+      } else if (action.type === "update") {
+        const changes = normalizeAIChanges(action.changes, task);
+        if (Object.keys(changes).length) normalized.push({ type: "update", taskId: task.id, before: task, changes });
+      }
+    });
+    return { reply: String(payload.reply || "").trim(), actions: normalized };
   }
 
   function setCaptureBusy(busy) {
@@ -1239,7 +1448,7 @@
     button.disabled = busy;
     if (busy) {
       button.dataset.label = label.textContent;
-      label.textContent = "AI 正在理解…";
+      label.textContent = captureMode === "manage" ? "AI 正在查找…" : "AI 正在理解…";
     } else if (button.dataset.label) {
       label.textContent = button.dataset.label;
       delete button.dataset.label;
@@ -2389,7 +2598,84 @@
     });
   }
 
+  function taskWhenLabel(task) {
+    const start = parseDateTime(task.start);
+    if (start) return `${shortDate(dateKey(start))} ${cleanTimeRange(task.start, task.end)}`;
+    const deadline = parseDateTime(task.deadline);
+    if (deadline) return `截止 ${shortDate(dateKey(deadline))} ${String(task.deadline).slice(11, 16)}`;
+    return "未排时间";
+  }
+
+  function renderActionPreview() {
+    const panel = $("#parsePreview");
+    panel.hidden = false;
+    if (!parsedActions.length) {
+      panel.innerHTML = `<div class="preview-empty">${esc(managementReply || "没有找到要修改的日程。可以说得更具体一点，比如「删除 11 月 18 日的学生会值班」。")}</div>
+        <div class="preview-actions"><button class="btn btn--ghost" data-preview-cancel>收起</button></div>`;
+      return;
+    }
+    const items = parsedActions.map((action, index) => {
+      const before = action.before;
+      const title = action.changes?.title || before.title;
+      const after = action.type === "update" ? { ...before, ...action.changes } : before;
+      const detail = action.type === "delete"
+        ? `删除 · ${esc(taskWhenLabel(before))}`
+        : `${esc(taskWhenLabel(before))} → ${esc(taskWhenLabel(after))}`;
+      return `<div class="preview-item">
+        <span class="preview-index">${pad2(index + 1)}</span>
+        <div class="preview-body">
+          <strong class="preview-action-title">${action.type === "delete" ? "删除" : "修改"}：${esc(title)}</strong>
+          <div class="preview-chips"><span>${detail}</span></div>
+        </div>
+      </div>`;
+    }).join("");
+    panel.innerHTML = `<div class="preview-head"><strong>我准备这样改</strong><span>${esc(managementReply || "确认后会立即更新日程")}</span></div>
+      <div class="preview-list">${items}</div>
+      <div class="preview-actions"><button class="btn btn--ghost" data-preview-cancel>取消</button><button class="btn btn--primary" data-preview-confirm>确认修改</button></div>`;
+  }
+
+  function applyParsedActions() {
+    if (!parsedActions.length) return;
+    let changed = 0;
+    let needsPlan = false;
+    parsedActions.forEach((action) => {
+      const index = state.tasks.findIndex((task) => task.id === action.taskId);
+      if (index < 0) return;
+      if (action.type === "delete") {
+        state.tasks.splice(index, 1);
+        changed += 1;
+        return;
+      }
+      if (action.type === "update") {
+        const task = state.tasks[index];
+        Object.assign(task, action.changes);
+        task.planWarning = false;
+        if (action.changes.start) {
+          task.fixed = true;
+          task.deadline = null;
+        }
+        if (action.changes.fixed === false || action.changes.deadline) needsPlan = true;
+        if (action.changes.estimate) needsPlan = true;
+        changed += 1;
+      }
+    });
+    if (needsPlan) autoPlan();
+    state.meta.lastPlanAt = new Date().toISOString();
+    saveState();
+    parsedActions = [];
+    parsedDrafts = [];
+    managementReply = "";
+    $("#parsePreview").hidden = true;
+    $("#captureInput").value = "";
+    renderAll();
+    showToast("日程已更新", `${changed} 项修改已生效。`, "success");
+  }
+
   function renderParsePreview() {
+    if (parsedActions.length || (managementReply && !parsedDrafts.length)) {
+      renderActionPreview();
+      return;
+    }
     const panel = $("#parsePreview");
     if (!parsedDrafts.length) {
       panel.hidden = false;
@@ -2441,6 +2727,30 @@
       showToast("先写点什么", "比如：明天下午3点和导师开会。", "warn");
       return;
     }
+    if (captureMode === "manage") {
+      if (!aiEnabled()) {
+        showToast("管理日程需要 AI", "先到 设置 → AI 智能解析 填入 DeepSeek API Key。", "warn", 9000);
+        return;
+      }
+      setCaptureBusy(true);
+      try {
+        const result = await parseManagementWithAI(text);
+        parsedActions = result.actions;
+        managementReply = result.reply;
+        parsedDrafts = [];
+        if (!parsedActions.length) {
+          showToast("没有找到要改的日程", result.reply || "可以说得更具体一点。", "warn", 9000);
+        }
+        renderParsePreview();
+      } catch (error) {
+        showToast("AI 管理失败", String(error.message || error), "warn", 9000);
+      } finally {
+        setCaptureBusy(false);
+      }
+      return;
+    }
+    parsedActions = [];
+    managementReply = "";
     const useAI = aiEnabled();
     if (useAI) setCaptureBusy(true);
     try {
@@ -2500,6 +2810,8 @@
     state.meta.demo = state.tasks.some((task) => task.demo);
     saveState();
     parsedDrafts = [];
+    parsedActions = [];
+    managementReply = "";
     $("#parsePreview").hidden = true;
     $("#captureInput").value = "";
     renderAll();
@@ -2985,12 +3297,18 @@
         return;
       }
       if (event.target.closest("[data-preview-confirm]")) {
+        if (parsedActions.length) {
+          applyParsedActions();
+          return;
+        }
         syncDraftsFromPreview();
         commitDrafts(parsedDrafts.slice());
         return;
       }
       if (event.target.closest("[data-preview-cancel]")) {
         parsedDrafts = [];
+        parsedActions = [];
+        managementReply = "";
         $("#parsePreview").hidden = true;
         return;
       }
@@ -3027,6 +3345,10 @@
       event.preventDefault();
       handleCaptureSubmit();
     });
+    $$("#captureMode button").forEach((button) => {
+      button.addEventListener("click", () => setCaptureMode(button.dataset.captureMode));
+    });
+    $("#voiceBtn")?.addEventListener("click", toggleVoiceInput);
     $("#captureInput").addEventListener("keydown", (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
