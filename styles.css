@@ -850,7 +850,7 @@ svg { display: block; }
   .capture-tools { flex-direction: column; align-items: stretch; }
   .capture-mode { align-self: flex-start; }
   .capture-action-row { width: 100%; }
-  .capture-action-row .capture-submit { flex: 1; }
+  .capture-action-row .capture-submit { flex: 1 1 auto; width: auto; min-width: 0; }
   .capture-submit { justify-content: center; width: 100%; }
   .capture-examples { gap: 5px; }
   .ai-tag { display: none; }
