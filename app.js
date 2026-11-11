@@ -2727,6 +2727,11 @@
       showToast("先写点什么", "比如：明天下午3点和导师开会。", "warn");
       return;
     }
+    const manageIntent = /(删除|删掉|去掉|取消|改到|改成|修改|调整|移到|挪到|换成|推迟|延后|提前|标记为完成|标记完成)/.test(text);
+    if (captureMode !== "manage" && manageIntent) {
+      setCaptureMode("manage");
+      showToast("已切到「管理日程」", "这句话看起来是在改已有安排，确认后才会生效。", "default", 5000);
+    }
     if (captureMode === "manage") {
       if (!aiEnabled()) {
         showToast("管理日程需要 AI", "先到 设置 → AI 智能解析 填入 DeepSeek API Key。", "warn", 9000);
