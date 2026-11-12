@@ -2668,6 +2668,7 @@
     $("#parsePreview").hidden = true;
     $("#captureInput").value = "";
     renderAll();
+    setCaptureMode("add");
     showToast("日程已更新", `${changed} 项修改已生效。`, "success");
   }
 
@@ -2728,6 +2729,11 @@
       return;
     }
     const manageIntent = /(删除|删掉|去掉|取消|改到|改成|修改|调整|移到|挪到|换成|推迟|延后|提前|标记为完成|标记完成)/.test(text);
+    const looksLikeNewEvent = /(今天|明天|后天|大后天|周[一二三四五六日天]|星期[一二三四五六日天]|上午|下午|中午|晚上|早上|今晚|明晚|\d{1,2}\s*[:：点])/.test(text);
+    if (captureMode === "manage" && !manageIntent && looksLikeNewEvent) {
+      setCaptureMode("add");
+      showToast("已切回「新建」", "这句话带日期/时间，像是在安排新日程。", "default", 5000);
+    }
     if (captureMode !== "manage" && manageIntent) {
       setCaptureMode("manage");
       showToast("已切到「管理日程」", "这句话看起来是在改已有安排，确认后才会生效。", "default", 5000);
