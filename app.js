@@ -1284,7 +1284,7 @@
     const rawDate = String(raw.date || "").replace(/\//g, "-");
     const directStart = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.start || "") ? String(raw.start).slice(0, 16) : null;
     const directEnd = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.end || "") ? String(raw.end).slice(0, 16) : null;
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    let date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
       ? rawDate
       : (directStart ? directStart.slice(0, 10) : null);
     const startTime = /^\d{1,2}:\d{2}$/.test(raw.startTime || "")
@@ -1293,6 +1293,13 @@
     const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "")
       ? raw.endTime
       : (directEnd ? directEnd.slice(11, 16) : null);
+    // If today is one of the chosen weekdays and the time has not passed,
+    // keep today's occurrence even if the model computed next week.
+    if (date && startTime && repeatDays.includes((new Date().getDay() + 6) % 7)
+        && minutesFromTime(startTime) > new Date().getHours() * 60 + new Date().getMinutes()
+        && !/下周|下个?周|从下周/.test(sourceText)) {
+      date = todayKey();
+    }
     const deadlineRaw = String(raw.deadline || "").replace(" ", "T");
     const hasDeadline = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw);
     // If the model returned an explicit start time, honour it instead of
@@ -3769,7 +3776,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113d").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113e").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3815,6 +3822,7 @@
     bootstrap();
   }
 })();
+
 
 
 
