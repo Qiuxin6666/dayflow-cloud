@@ -1,5 +1,5 @@
 /* DayFlow service worker: offline shell + notification click handling. */
-const CACHE = "dayflow-cloud-v1";
+const CACHE = "dayflow-cloud-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -36,7 +36,7 @@ self.addEventListener("fetch", (event) => {
   // Network-first so an updated local build is picked up immediately; the
   // cache is only a fallback for offline use.
   event.respondWith(
-    fetch(request)
+    fetch(request, { cache: "no-store" })
       .then((response) => {
         if (!response || response.status !== 200) return response;
         const copy = response.clone();
@@ -44,7 +44,7 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(async () => {
-        const cached = await caches.match(request);
+        const cached = await caches.match(request, { ignoreSearch: true });
         if (cached) return cached;
         if (request.mode === "navigate") return caches.match("./index.html");
         return Response.error();
