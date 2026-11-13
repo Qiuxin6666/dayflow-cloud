@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    日序 DayFlow — application
    A local-first planner: natural-language capture, auto-scheduling,
    task inbox, and reminders (native + optional chat webhooks).
@@ -851,9 +851,42 @@
     return null;
   }
 
+  function extractWeekdays(text) {
+    const map = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6, "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6 };
+    const days = [];
+    const push = (ch) => {
+      if (hasOwn(map, ch) && !days.includes(map[ch])) days.push(map[ch]);
+    };
+    const range = text.match(/(?:周|星期|礼拜)([一二三四五六日天1-7])\s*(?:至|到|-|~|～)\s*(?:周|星期|礼拜)?([一二三四五六日天1-7])/);
+    if (range) {
+      const start = map[range[1]];
+      const end = map[range[2]];
+      if (start !== undefined && end !== undefined) {
+        let cursor = start;
+        for (let i = 0; i < 7; i += 1) {
+          push(String(cursor + 1));
+          if (cursor === end) break;
+          cursor = (cursor + 1) % 7;
+        }
+        return days;
+      }
+    }
+    const re = /(?:周|星期|礼拜)([一二三四五六日天1-7](?:\s*[、,，和及]?\s*[一二三四五六日天1-7])*)/g;
+    let match;
+    while ((match = re.exec(text))) {
+      for (const ch of match[1]) push(ch);
+    }
+    return days;
+  }
+
+  function weekdayListLabel(days) {
+    const names = ["一", "二", "三", "四", "五", "六", "日"];
+    return days.map((day) => names[day]).join("、");
+  }
+
   function detectCategory(text) {
     if (/体检|医院|看病|牙科|牙医|跑步|健身|运动|瑜伽|冥想|散步|吃药|复诊|睡眠|早睡/.test(text)) return "health";
-    if (/论文|作业|复习|考试|课程|上课|学习|阅读|背单词|导师|实验|调研|初稿|文献|高数|数学|英语|物理|化学|思政|经济|Python|编程/.test(text)) return "study";
+    if (/论文|作业|复习|考试|课程|上课|学习|阅读|背单词|导师|实验|调研|初稿|文献|高数|数学|英语|物理|化学|思政|经济|Python|编程|自习/.test(text)) return "study";
     if (/会议|开会|评审|客户|项目|汇报|周报|邮件|方案|需求|面试|同事|老板|工作|复盘|数据|组会|学生会|值班/.test(text)) return "work";
     if (/买|购买|取|快递|缴费|交电费|生日|聚会|朋友|家里|打扫|做饭|预约|理发|银行|旅行|订票|超市/.test(text)) return "life";
     return "other";
@@ -882,10 +915,12 @@
       .replace(/每个?单周|每个?双周/g, " ")
       .replace(/我都要进行|都要进行|我要进行/g, " ")
       .replace(/(大后天|后天|明天|明日|今天|今日|昨天|今晚|明晚|明早|今早)/g, " ")
-      .replace(/(下下|下|这|本)?(?:周|星期|礼拜)[一二三四五六日天]/g, " ")
+      .replace(/(?:下下|下|这|本)?(?:周|星期|礼拜)[一二三四五六日天1-7](?:\s*[、,，和及]?\s*[一二三四五六日天1-7])*/g, " ")
       .replace(/(?:(\d{4})年)?\d{1,2}月\d{1,2}[日号]?/g, " ")
       .replace(/\d{1,2}\s*天后/g, " ")
       .replace(/(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
+      .replace(/([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?/g, " ")
+      .replace(/([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
       .replace(/(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
@@ -929,13 +964,10 @@
   }
 
   function recurrenceOccurrences(segment, now, startMinutes, estimate) {
-    const weekdayMatch = segment.match(/(?:周|星期|礼拜)([一二三四五六日天])/);
+    const weekdays = extractWeekdays(segment);
     const hasParity = /单周|双周/.test(segment);
     const everyWeek = /每周|每星期|每个?礼拜/.test(segment);
-    if (!weekdayMatch || startMinutes === null || (!hasParity && !everyWeek)) return null;
-
-    const weekdayIndex = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 日: 6, 天: 6 }[weekdayMatch[1]];
-    if (weekdayIndex === undefined) return null;
+    if (!weekdays.length || startMinutes === null || (!hasParity && !everyWeek)) return null;
 
     const parity = /单周/.test(segment) ? "odd" : (/双周/.test(segment) ? "even" : "all");
     const startSetting = state.settings.semesterStart || "2026-08-31";
@@ -948,13 +980,16 @@
     for (let week = currentWeek; week <= semesterWeeks; week += 1) {
       if (parity === "odd" && week % 2 === 0) continue;
       if (parity === "even" && week % 2 !== 0) continue;
-      const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
-      const date = dateKey(day);
-      const start = combineDateTime(date, startMinutes);
-      const end = combineDateTime(date, startMinutes + estimate);
-      if (new Date(start) <= new Date(now.getTime() + 60000)) continue;
-      occurrences.push({ week, date, start, end });
+      weekdays.forEach((weekdayIndex) => {
+        const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
+        const date = dateKey(day);
+        const start = combineDateTime(date, startMinutes);
+        const end = combineDateTime(date, startMinutes + estimate);
+        if (new Date(start) <= new Date(now.getTime() + 60000)) return;
+        occurrences.push({ week, date, start, end, weekday: weekdayIndex });
+      });
     }
+    occurrences.sort((a, b) => String(a.start).localeCompare(String(b.start)));
     return occurrences;
   }
 
@@ -1017,7 +1052,8 @@
         targetDate = occurrences[0].date;
         start = occurrences[0].start;
         end = occurrences[0].end;
-        repeatLabel = `${repeat || "每周"} · ${occurrences.length} 次`;
+        const repeatDays = extractWeekdays(segment);
+        repeatLabel = `${repeat || "每周"}${repeatDays.length > 1 ? ` 周${weekdayListLabel(repeatDays)}` : ""} · ${occurrences.length} 次`;
       }
     }
 
@@ -2762,7 +2798,8 @@
     }
     parsedActions = [];
     managementReply = "";
-    const useAI = aiEnabled();
+    const multiWeekday = /每(?:周|星期|礼拜)|每个?[单双]周/.test(text) && extractWeekdays(text).length > 1;
+    const useAI = aiEnabled() && !multiWeekday;
     if (useAI) setCaptureBusy(true);
     try {
       if (useAI) {
@@ -3683,7 +3720,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113a").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113b").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3729,3 +3766,4 @@
     bootstrap();
   }
 })();
+
