@@ -702,7 +702,7 @@
     );
 
     let range = null;
-    const colonRange = normalized.match(/(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：]\s*(\d{2})/);
+    const colonRange = normalized.match(/(\d{1,2})\s*[:：.]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：.]\s*(\d{2})/);
     if (colonRange) {
       const prefix = normalized.slice(Math.max(0, colonRange.index - 7), colonRange.index);
       const period = periodFromPrefix(prefix);
@@ -742,7 +742,7 @@
       return { ...range, isRange: true };
     }
 
-    const colon = normalized.match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
+    const colon = normalized.match(/(\d{1,2})\s*[:：.]\s*(\d{2})/);
     if (colon) {
       const prefix = normalized.slice(Math.max(0, colon.index - 7), colon.index);
       const period = periodFromPrefix(prefix);
@@ -918,17 +918,19 @@
       .replace(/(?:下下|下|这|本)?(?:周|星期|礼拜)[一二三四五六日天1-7](?:\s*[、,，和及]?\s*[一二三四五六日天1-7])*/g, " ")
       .replace(/(?:(\d{4})年)?\d{1,2}月\d{1,2}[日号]?/g, " ")
       .replace(/\d{1,2}\s*天后/g, " ")
-      .replace(/(\d{1,2})\s*[:：]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
+      .replace(/(\d{1,2})\s*[:：.]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：.]\s*(\d{2})/g, " ")
       .replace(/([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?/g, " ")
       .replace(/([一二两三四五六七八九十]{1,3})\s*点\s*(半|[一二两三四五六七八九十]{1,3}\s*分?)?/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
-      .replace(/(\d{1,2})\s*[:：]\s*(\d{2})/g, " ")
+      .replace(/(\d{1,2})\s*[:：.]\s*(\d{2})/g, " ")
       .replace(/(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/g, " ")
       .replace(/(\d+(?:\.\d+)?)\s*(?:个)?\s*(?:小时|钟头|h|hr|hours?)(?:\s*(\d{1,2})\s*分)?/gi, " ")
       .replace(/([一二两三四五六七八九十]{1,3})\s*(?:个)?\s*小时(?:\s*([一二两三四五六七八九十]{1,3})\s*分)?/g, " ")
       .replace(/(\d{1,3})\s*(?:分钟|min)(?![a-z])/gi, " ")
       .replace(/一个半小时|一个半钟|半小时/g, " ")
       .replace(/(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间)/g, " ")
+      .replace(/^\s*从\s*/, "")
+      .replace(/\s*从\s*$/, "")
       .replace(/^\s+/, "")
       .replace(/^每\s*/, "")
       .replace(/(紧急|尽快|马上|立刻|asap|高优|不急|有空|顺便|低优|可选)/gi, " ")
@@ -1077,8 +1079,31 @@
     };
   }
 
+  function isTimeOnlySegment(segment) {
+    let rest = String(segment)
+      .replace(/(\d{1,2})\s*[:：.]\s*(\d{2})\s*(?:-|–|—|~|～|至|到)\s*(\d{1,2})\s*[:：.]\s*(\d{2})/g, " ")
+      .replace(/(?:[一二两三四五六七八九十]{1,3}|\d{1,2})\s*点\s*(?:半|[一二两三四五六七八九十\d]{1,3}\s*分?)?\s*(?:-|–|—|~|～|至|到)\s*(?:[一二两三四五六七八九十]{1,3}|\d{1,2})\s*点\s*(?:半|[一二两三四五六七八九十\d]{1,3}\s*分?)?/g, " ")
+      .replace(/(\d{1,2})\s*[:：.]\s*(\d{2})/g, " ")
+      .replace(/(?:[一二两三四五六七八九十]{1,3}|\d{1,2})\s*点\s*(?:半|[一二两三四五六七八九十\d]{1,3}\s*分?)?/g, " ")
+      .replace(/(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|从|到|至|开始|结束|时间|左右|之间)/g, " ")
+      .replace(/[，,。；;、\s]/g, "");
+    return !rest;
+  }
+
+  function mergeTimeOnlySegments(segments) {
+    const merged = [];
+    segments.forEach((segment) => {
+      if (merged.length && isTimeOnlySegment(segment)) {
+        merged[merged.length - 1] = `${merged[merged.length - 1]}，${segment}`;
+      } else {
+        merged.push(segment);
+      }
+    });
+    return merged;
+  }
+
   function parseNaturalInput(text, base = new Date()) {
-    const drafts = splitSegments(text).map((segment) => parseSegment(segment, base)).filter((draft) => draft.title);
+    const drafts = mergeTimeOnlySegments(splitSegments(text)).map((segment) => parseSegment(segment, base)).filter((draft) => draft.title);
     const named = drafts.filter((draft) => draft.title !== "未命名事项");
     if (named.length && drafts.length > 1) {
       const fallback = named[named.length - 1];
@@ -3720,7 +3745,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113b").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113c").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3766,4 +3791,5 @@
     bootstrap();
   }
 })();
+
 
