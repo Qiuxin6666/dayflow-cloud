@@ -1137,8 +1137,9 @@
     const tag = $("#aiTag");
     const label = $("#captureSubmitLabel");
     const manage = captureMode === "manage";
-    if (tag) tag.innerHTML = `<i></i>${manage ? "AI 日程管理" : (aiEnabled() ? "AI 增强解析" : "自然语言解析")}`;
-    if (label) label.textContent = manage ? "执行修改" : (aiEnabled() ? "AI 帮我安排" : "帮我安排");
+    const ready = aiEnabled();
+    if (tag) tag.innerHTML = `<i></i>${manage ? "AI 日程管理" : (ready ? "AI 解析" : "需要 AI Key")}`;
+    if (label) label.textContent = manage ? "执行修改" : (ready ? "AI 帮我安排" : "先配置 AI");
   }
 
   function setCaptureMode(mode) {
@@ -1235,7 +1236,7 @@
     updateAITag();
   }
 
-  function expandAIOccurrences(firstDate, startTime, endTime, repeat) {
+  function expandAIOccurrences(firstDate, startTime, endTime, repeat, repeatDays = []) {
     if (!/^(odd|even|weekly)$/.test(repeat || "")) return [];
     const startMinutes = minutesFromTime(startTime, 9 * 60);
     const endMinutes = minutesFromTime(endTime, startMinutes + 45);
@@ -1245,18 +1246,23 @@
     const first = keyDate(firstDate);
     if (!first) return [];
     const firstWeek = Math.max(1, Math.floor((startOfDay(first).getTime() - startOfDay(semesterStart).getTime()) / (7 * 86400000)) + 1);
-    const weekdayIndex = (first.getDay() + 6) % 7;
+    const firstWeekday = (first.getDay() + 6) % 7;
+    const days = Array.isArray(repeatDays) && repeatDays.length ? [...new Set(repeatDays)] : [firstWeekday];
     const occurrences = [];
     for (let week = firstWeek; week <= semesterWeeks; week += 1) {
       if (repeat === "odd" && week % 2 === 0) continue;
       if (repeat === "even" && week % 2 !== 0) continue;
-      const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
-      const date = dateKey(day);
-      if (date < firstDate) continue;
-      const start = combineDateTime(date, startMinutes);
-      if (new Date(start) <= new Date(Date.now() + 60000)) continue;
-      occurrences.push({ week, date, start, end: combineDateTime(date, startMinutes + estimate) });
+      days.forEach((weekdayIndex) => {
+        if (!Number.isInteger(weekdayIndex) || weekdayIndex < 0 || weekdayIndex > 6) return;
+        const day = addDays(semesterStart, (week - 1) * 7 + weekdayIndex);
+        const date = dateKey(day);
+        if (date < firstDate) return;
+        const start = combineDateTime(date, startMinutes);
+        if (new Date(start) <= new Date(Date.now() + 60000)) return;
+        occurrences.push({ week, date, start, end: combineDateTime(date, startMinutes + estimate), weekday: weekdayIndex });
+      });
     }
+    occurrences.sort((a, b) => String(a.start).localeCompare(String(b.start)));
     return occurrences;
   }
 
@@ -1265,6 +1271,16 @@
     const category = CATEGORY_LABELS[raw.category] ? raw.category : detectCategory(`${raw.title} ${raw.notes || ""}`);
     const priority = [1, 2, 3].includes(Number(raw.priority)) ? Number(raw.priority) : 2;
     const repeat = ["odd", "even", "weekly"].includes(raw.repeat) ? raw.repeat : "";
+    let repeatDays = [];
+    if (Array.isArray(raw.repeatDays)) {
+      repeatDays = raw.repeatDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7)
+        .map((day) => day - 1);
+    } else if (typeof raw.repeatDays === "string") {
+      repeatDays = extractWeekdays(`周${raw.repeatDays}`);
+    }
+    repeatDays = [...new Set(repeatDays)];
     const rawDate = String(raw.date || "").replace(/\//g, "-");
     const directStart = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.start || "") ? String(raw.start).slice(0, 16) : null;
     const directEnd = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw.end || "") ? String(raw.end).slice(0, 16) : null;
@@ -1298,13 +1314,22 @@
       : null;
     let repeatOccurrences = null;
     let repeatLabel = "";
-    if (fixed && repeat) {
-      const occurrences = expandAIOccurrences(date, startTime, endTime || timeFromMinutes(minutesFromTime(startTime) + estimate), repeat);
+    if (fixed && (repeat || repeatDays.length)) {
+      const repeatMode = repeat || "weekly";
+      const occurrences = expandAIOccurrences(
+        date,
+        startTime,
+        endTime || timeFromMinutes(minutesFromTime(startTime) + estimate),
+        repeatMode,
+        repeatDays
+      );
       if (occurrences.length) {
         repeatOccurrences = occurrences;
         start = occurrences[0].start;
         end = occurrences[0].end;
-        repeatLabel = `${repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : "每周")} · ${occurrences.length} 次`;
+        const repeatPrefix = repeatMode === "odd" ? "单周" : (repeatMode === "even" ? "双周" : "每周");
+        const daysLabel = repeatDays.length > 1 ? ` 周${weekdayListLabel(repeatDays)}` : "";
+        repeatLabel = `${repeatPrefix}${daysLabel} · ${occurrences.length} 次`;
       }
     }
     const deadline = !fixed && hasDeadline
@@ -1323,7 +1348,7 @@
       deadline,
       availableFrom: null,
       reminderLead: null,
-      repeat: repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : (repeat === "weekly" ? "每周" : "")),
+      repeat: repeat === "odd" ? "单周" : (repeat === "even" ? "双周" : ((repeat === "weekly" || repeatDays.length) ? "每周" : "")),
       repeatOccurrences,
       repeatLabel,
       source: sourceText
@@ -1388,17 +1413,20 @@
 学期第一周周一：${semesterStart}
 学期总周数：${state.settings.semesterWeeks || 19}
 未来 21 天日历：${calendar}
-输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even"}]}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}]}
 规则：
-1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。
-2. 有明确开始时间（如“14:10-15:40”“下午3点”）时 fixed=true，填 date/startTime/endTime；没有结束时间就按合理用时估算。
+1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。逗号后面如果只有时间（如“晚自习，从18.40-20.50”），时间属于前一件事，不能拆成“从18.40-20.50”这种任务。
+2. 有明确开始时间（如“14:10-15:40”“18.40-20.50”“下午3点”）时 fixed=true，填 date/startTime/endTime；18.40 表示 18:40。没有结束时间就按合理用时估算。
 3. “周五前交”“截止到……”这类是截止时间：fixed=false，填 deadline，estimate 为预计用时。
 4. 只有日期没有具体时间：fixed=false，deadline 填该日 18:00，除非用户明确说是会议/约见。
 5. “每个单周周一” repeat=odd；“每个双周周三” repeat=even；“每周X” repeat=weekly；date 填从现在开始的第一次发生日期，不要填过去日期。
-6. “明天/后天/下周三/这周五”等相对日期，必须按上面的 21 天日历换算，并核对星期几，不要算错一天。
-7. 普通一次性日程 repeat=none。
-8. 时间用 24 小时制；不要编造用户没说的信息。
-9. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
+6. 一周多个星期几（“每周一三五”“每周一、三、五”）必须只输出一个任务，repeat=weekly，repeatDays 用数字数组表示：1=周一、2=周二、3=周三、4=周四、5=周五、6=周六、7=周日；例如一三五输出 [1,3,5]。不要拆成三个任务。
+7. 如果今天就是重复日之一，且今天的开始时间还没过，date 必须填今天，不能直接跳到下周。
+8. “明天/后天/下周三/这周五”等相对日期，必须按上面的 21 天日历换算，并核对星期几，不要算错一天。
+9. 普通一次性日程 repeat=none，repeatDays=[]。
+10. 时间用 24 小时制；不要编造用户没说的信息。
+11. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
+示例：输入“每周一三五晚自习，从18.40-20.50”（假设今天周五 08:30），应输出一个任务：title=晚自习，fixed=true，date=今天，startTime=18:40，endTime=20:50，repeat=weekly，repeatDays=[1,3,5]。
 示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
     const payload = await callDeepSeekJson(system, text);
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
@@ -2823,25 +2851,21 @@
     }
     parsedActions = [];
     managementReply = "";
-    const multiWeekday = /每(?:周|星期|礼拜)|每个?[单双]周/.test(text) && extractWeekdays(text).length > 1;
-    const useAI = aiEnabled() && !multiWeekday;
-    if (useAI) setCaptureBusy(true);
+    if (!aiEnabled()) {
+      showToast("解析日程需要 AI", "先到 设置 → AI 智能解析 填入 DeepSeek API Key。", "warn", 9000);
+      return;
+    }
+    setCaptureBusy(true);
     try {
-      if (useAI) {
-        try {
-          parsedDrafts = await parseWithAI(text);
-        } catch (error) {
-          parsedDrafts = parseNaturalInput(text);
-          showToast("AI 解析失败，已用本地规则", String(error.message || error), "warn", 9000);
-        }
-      } else {
-        parsedDrafts = parseNaturalInput(text);
-      }
+      parsedDrafts = await parseWithAI(text);
+    } catch (error) {
+      parsedDrafts = [];
+      showToast("AI 解析失败", String(error.message || error), "warn", 10000);
     } finally {
       setCaptureBusy(false);
     }
     if (!parsedDrafts.length) {
-      showToast("这次没太听懂", "试试带上时间，例如「明天下午3点开会」。", "warn");
+      showToast("这次没太听懂", "可以换一种说法，或者带上具体日期和时间。", "warn");
     }
     renderParsePreview();
   }
@@ -3745,7 +3769,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113c").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113d").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3791,5 +3815,6 @@
     bootstrap();
   }
 })();
+
 
 
