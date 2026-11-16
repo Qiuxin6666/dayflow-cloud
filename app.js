@@ -31,6 +31,7 @@
     workEnd: "18:30",
     lunchStart: "12:00",
     lunchEnd: "13:30",
+    lunchEnabled: true,
     eveningEnabled: true,
     eveningStart: "19:30",
     eveningEnd: "21:30",
@@ -519,7 +520,9 @@
     const lunchEnd = minutesFromTime(settings.lunchEnd, 13 * 60 + 30);
     const windows = [];
     if (end <= start) return windows;
-    if (lunchStart > start && lunchStart < end) {
+    if (settings.lunchEnabled === false) {
+      windows.push([start, end]);
+    } else if (lunchStart > start && lunchStart < end) {
       windows.push([start, Math.min(end, lunchStart)]);
       if (lunchEnd < end && lunchEnd > lunchStart) windows.push([Math.max(start, lunchEnd), end]);
     } else {
@@ -2012,7 +2015,7 @@
 
     const lunchStart = minutesFromTime(state.settings.lunchStart, 12 * 60);
     const lunchEnd = minutesFromTime(state.settings.lunchEnd, 13 * 60 + 30);
-    const lunchVisible = lunchEnd > range.start && lunchStart < range.end;
+    const lunchVisible = state.settings.lunchEnabled !== false && lunchEnd > range.start && lunchStart < range.end;
 
     let labels = "";
     let grid = "";
@@ -2212,10 +2215,13 @@
     }
 
     let body = `<div class="week-time-col" style="height:${(WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_HEIGHT_WEEK}px">${labels}</div>`;
+    const lunchEnabled = state.settings.lunchEnabled !== false;
+    const lunchStart = minutesFromTime(state.settings.lunchStart, 12 * 60);
+    const lunchEnd = minutesFromTime(state.settings.lunchEnd, 13 * 60 + 30);
+    const lunchTop = (Math.max(lunchStart, WEEK_START_HOUR * 60) - WEEK_START_HOUR * 60) / 60 * HOUR_HEIGHT_WEEK;
+    const lunchHeight = Math.max(0, (Math.min(lunchEnd, WEEK_END_HOUR * 60) - Math.max(lunchStart, WEEK_START_HOUR * 60)) / 60 * HOUR_HEIGHT_WEEK);
     days.forEach((key) => {
       const list = tasksForDay(key);
-      const lunchTop = (Math.max(12 * 60, WEEK_START_HOUR * 60) - WEEK_START_HOUR * 60) / 60 * HOUR_HEIGHT_WEEK;
-      const lunchHeight = ((13 * 60 + 30) - 12 * 60) / 60 * HOUR_HEIGHT_WEEK;
       let blocks = "";
       list.forEach((task) => {
         const startTime = parseDateTime(task.start);
@@ -2240,7 +2246,7 @@
         }
       }
       body += `<div class="week-day-col ${key === todayKey() ? "is-today" : ""} ${[0, 6].includes(keyDate(key).getDay()) ? "is-weekend" : ""}" data-week-col="${key}" style="height:${(WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_HEIGHT_WEEK}px">
-        <div class="lunch-band" style="top:${lunchTop}px;height:${lunchHeight}px"></div>
+        ${lunchEnabled && lunchHeight > 0 ? `<div class="lunch-band" style="top:${lunchTop}px;height:${lunchHeight}px"></div>` : ""}
         ${blocks}${now}
       </div>`;
     });
@@ -3151,7 +3157,7 @@
   // settings interactions
 
   function markSettingsDirty(key) {
-    if (["workStart", "workEnd", "lunchStart", "lunchEnd", "eveningEnabled", "eveningStart", "eveningEnd", "dailyCapacity", "defaultDuration", "buffer"].includes(key)) {
+    if (["workStart", "workEnd", "lunchStart", "lunchEnd", "lunchEnabled", "eveningEnabled", "eveningStart", "eveningEnd", "dailyCapacity", "defaultDuration", "buffer"].includes(key)) {
       autoPlan();
       renderAll();
     }
@@ -3790,7 +3796,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113g").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117a").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3836,6 +3842,7 @@
     bootstrap();
   }
 })();
+
 
 
 
