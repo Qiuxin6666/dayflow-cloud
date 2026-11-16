@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261117b">
+  <link rel="stylesheet" href="styles.css?v=20261117c">
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true">
@@ -64,6 +64,9 @@
         <nav class="nav-list" id="mainNav" aria-label="主导航">
           <button class="nav-item is-active" data-view="today">
             <svg class="icon"><use href="#i-sun"></use></svg><span>今日</span><em class="nav-count" id="navTodayCount"></em>
+          </button>
+          <button class="nav-item" data-view="chat">
+            <svg class="icon"><use href="#i-sparkles"></use></svg><span>管家</span>
           </button>
           <button class="nav-item" data-view="plan">
             <svg class="icon"><use href="#i-calendar"></use></svg><span>行程</span>
@@ -255,6 +258,26 @@
                 <div class="week-dots" id="weekDots"></div>
               </section>
             </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-chat" data-view-panel="chat">
+          <div class="page-head">
+            <div><p class="eyebrow">PERSONAL BUTLER</p><h1>管家</h1><p class="page-sub">直接说人话。我会先理解，再决定是问你一句，还是改日程。</p></div>
+            <span class="pill is-on">AI 对话</span>
+          </div>
+          <div class="butler-card">
+            <div class="butler-messages" id="butlerMessages"></div>
+            <form class="butler-form" id="butlerForm">
+              <textarea id="butlerInput" rows="2" placeholder="例：这周别排太满，周三下午我要去医院；另外把晚自习改到 18:40"></textarea>
+              <div class="butler-tools">
+                <span class="butler-hint">Enter 发送 · Shift+Enter 换行</span>
+                <div class="butler-actions">
+                  <button class="voice-btn" type="button" id="butlerMic" aria-label="语音输入" title="语音输入"><svg class="icon"><use href="#i-mic"></use></svg></button>
+                  <button class="capture-submit" type="submit" id="butlerSend"><span id="butlerSendLabel">发送</span><svg class="icon"><use href="#i-arrow-up-right"></use></svg></button>
+                </div>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -454,7 +477,7 @@
     <button data-view="plan"><svg class="icon"><use href="#i-calendar"></use></svg><span>行程</span></button>
     <button class="mobile-add" id="mobileAddBtn" aria-label="新建任务"><svg class="icon"><use href="#i-plus"></use></svg></button>
     <button data-view="tasks"><svg class="icon"><use href="#i-inbox"></use></svg><span>任务</span></button>
-    <button data-view="reminders"><svg class="icon"><use href="#i-bell"></use></svg><span>提醒</span></button>
+    <button data-view="chat"><svg class="icon"><use href="#i-sparkles"></use></svg><span>管家</span></button>
   </nav>
 
   <div class="modal-layer" id="taskModal" hidden aria-hidden="true">
@@ -551,12 +574,13 @@
   </div>
 
   <noscript><div class="noscript">日序需要启用 JavaScript 才能运行。</div></noscript>
-  <script src="config.js?v=20261117b" defer></script>
+  <script src="config.js?v=20261117c" defer></script>
   <script src="vendor/supabase.js" defer></script>
-  <script src="cloud-boot.js?v=20261117b" defer></script>
-  <script src="app.js?v=20261117b" defer></script>
+  <script src="cloud-boot.js?v=20261117c" defer></script>
+  <script src="app.js?v=20261117c" defer></script>
 </body>
 </html>
+
 
 
 
