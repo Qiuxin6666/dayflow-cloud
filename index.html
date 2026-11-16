@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261113g">
+  <link rel="stylesheet" href="styles.css?v=20261117a">
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true">
@@ -369,6 +369,7 @@
                 <label class="field"><span>你的称呼</span><input type="text" data-setting="userName" placeholder="朋友" maxlength="16"></label>
                 <div class="field field--inline"><span>工作时段</span><div class="time-pair"><input type="time" data-setting="workStart"><i>—</i><input type="time" data-setting="workEnd"></div></div>
                 <div class="field field--inline"><span>午休时间</span><div class="time-pair"><input type="time" data-setting="lunchStart"><i>—</i><input type="time" data-setting="lunchEnd"></div></div>
+                <div class="field"><span>启用午休</span><div class="switch-line"><label class="switch"><input type="checkbox" data-setting="lunchEnabled"><span></span></label><small>这里只是行程表的休息带，不是任务；关闭后智能排程不再避开午休</small></div></div>
               </div>
             </section>
 
@@ -550,12 +551,13 @@
   </div>
 
   <noscript><div class="noscript">日序需要启用 JavaScript 才能运行。</div></noscript>
-  <script src="config.js?v=20261113g" defer></script>
+  <script src="config.js?v=20261117a" defer></script>
   <script src="vendor/supabase.js" defer></script>
-  <script src="cloud-boot.js?v=20261113g" defer></script>
-  <script src="app.js?v=20261113g" defer></script>
+  <script src="cloud-boot.js?v=20261117a" defer></script>
+  <script src="app.js?v=20261117a" defer></script>
 </body>
 </html>
+
 
 
 
