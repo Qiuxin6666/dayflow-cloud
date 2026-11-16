@@ -2883,7 +2883,6 @@
     const taskKey = (task) => [
       String(task.title || "").replace(/[\s，,。；;：:、]/g, "").toLowerCase(),
       task.start || task.deadline || "",
-      task.end || "",
       task.fixed ? "fixed" : "auto"
     ].join("|");
     const existing = new Set(state.tasks.map(taskKey));
@@ -3791,7 +3790,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113f").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113g").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3837,6 +3836,7 @@
     bootstrap();
   }
 })();
+
 
 
 
