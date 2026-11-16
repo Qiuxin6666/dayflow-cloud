@@ -1,5 +1,5 @@
 ﻿/* DayFlow service worker: offline shell + notification click handling. */
-const CACHE = "dayflow-cloud-v14";
+const CACHE = "dayflow-cloud-v15";
 const ASSETS = [
   "./",
   "./index.html",
@@ -67,6 +67,7 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+
 
 
 
