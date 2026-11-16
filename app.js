@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261117e";
+  const APP_VERSION = "20261117f";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1742,6 +1742,30 @@
     if (butlerBusy) html += `<div class="butler-typing">正在理解你的意思…</div>`;
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+
+    const rail = $("#butlerRail");
+    if (rail) {
+      const now = new Date();
+      const upcoming = state.tasks
+        .filter((task) => !task.done && task.start && parseDateTime(task.start) > now)
+        .sort((a, b) => String(a.start).localeCompare(String(b.start)))
+        .slice(0, 4);
+      const nextHtml = upcoming.length
+        ? upcoming.map((task) => `<div class="butler-rail-item"><b>${shortDate(dateKey(parseDateTime(task.start)))} ${cleanTimeRange(task.start, task.end)}</b><span>${esc(task.title)}</span></div>`).join("")
+        : `<div class="butler-rail-item">今天没有更多固定安排。</div>`;
+      rail.innerHTML = `<section class="butler-rail-card">
+        <p class="section-kicker">UP NEXT</p><h3>接下来</h3><div class="butler-rail-list">${nextHtml}</div>
+        <div class="butler-rail-actions"><button class="btn btn--soft" data-view="today">看日程表</button><button class="btn btn--ghost" data-view="settings">排程设置</button></div>
+      </section>
+      <section class="butler-rail-card">
+        <p class="section-kicker">RHYTHM</p><h3>你的节奏</h3>
+        <div class="butler-rail-list">
+          <div class="butler-rail-item"><span>工作时段</span><b>${state.settings.workStart}–${state.settings.workEnd}</b></div>
+          <div class="butler-rail-item"><span>任务之间</span><b>${state.settings.buffer || 0} 分钟</b></div>
+          <div class="butler-rail-item"><span>每日上限</span><b>${state.settings.dailyCapacity} 分钟</b></div>
+        </div>
+      </section>`;
+    }
   }
 
   function renderChats() {
@@ -2251,7 +2275,7 @@
     $("#topDate").textContent = currentView === "plan"
       ? `${shortDate(weekStartKey)} — ${shortDate(addDaysKey(weekStartKey, 6))}`
       : `${dateLabel(dayDate)} ${weekdayLabel(dayDate)}`;
-    const sectionNames = { today: "今日", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
+    const sectionNames = { chats: "对话", chat: "管家", notifications: "提醒", today: "今日", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
     $("#topSection").textContent = sectionNames[currentView] || "今日";
 
     renderServerStatus();
@@ -3803,6 +3827,10 @@
   // event bindings
 
   function bindEvents() {
+    window.addEventListener("resize", () => {
+      const mobile = applyResponsiveShell();
+      if (!mobile && (currentView === "chats" || currentView === "notifications")) navigate("chat", { updateHash: false });
+    });
     document.addEventListener("click", (event) => {
       const viewButton = event.target.closest("[data-view]");
       if (viewButton) {
@@ -4289,6 +4317,13 @@
     }
   }
 
+  function applyResponsiveShell() {
+    const mobile = window.innerWidth <= 900;
+    document.body.classList.toggle("wx", mobile);
+    return mobile;
+  }
+  applyResponsiveShell();
+
   async function bootstrap() {
     if (new URLSearchParams(location.search).has("skipboot")) {
       $("#bootScreen")?.remove();
@@ -4328,7 +4363,9 @@
 
     bindEvents();
     const hashView = location.hash.replace("#", "");
-    currentView = VIEW_TITLES[hashView] ? hashView : "chats";
+    const mobileShell = applyResponsiveShell();
+    currentView = VIEW_TITLES[hashView] ? hashView : (mobileShell ? "chats" : "chat");
+    if (!mobileShell && (currentView === "chats" || currentView === "notifications")) currentView = "chat";
     dayDate = todayKey();
     weekStartKey = dateKey(startOfWeek(new Date()));
     navigate(currentView, { updateHash: false });
@@ -4346,7 +4383,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117e").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117f").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4392,6 +4429,7 @@
     bootstrap();
   }
 })();
+
 
 
 
