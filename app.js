@@ -1605,6 +1605,11 @@
     return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
   }
 
+  function formatShortDateTime(value) {
+    const date = parseDateTime(value);
+    return date ? `${shortDate(dateKey(date))} ${pad2(date.getHours())}:${pad2(date.getMinutes())}` : "";
+  }
+
   function pushChat(role, content, persist = true) {
     if (!state || !content) return;
     const messages = chatHistory().slice(-39);
@@ -1736,6 +1741,60 @@
     if (butlerBusy) html += `<div class="butler-typing">正在理解你的意思…</div>`;
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+  }
+
+  function renderChats() {
+    if (!state) return;
+    const messages = chatHistory();
+    const last = messages[messages.length - 1];
+    const preview = $("#butlerPreview");
+    const time = $("#butlerTime");
+    if (preview) preview.textContent = last ? String(last.content).replace(/\s+/g, " ").slice(0, 46) : "直接说人话，我来安排";
+    if (time) time.textContent = last ? chatTimeLabel(last.at) : "";
+
+    const events = Array.isArray(state.meta.events) ? state.meta.events : [];
+    const upcoming = buildReminders(1)[0];
+    const lastEvent = events[events.length - 1];
+    const noticePreview = $("#noticePreview");
+    const noticeTime = $("#noticeTime");
+    if (noticePreview) {
+      noticePreview.textContent = upcoming
+        ? `${formatShortDateTime(upcoming.when)} ${upcoming.task.title}`
+        : (lastEvent ? String(lastEvent.title || "日程提醒") : "提醒会同步发到企业微信");
+    }
+    if (noticeTime) {
+      noticeTime.textContent = lastEvent ? chatTimeLabel(lastEvent.at) : "";
+    }
+  }
+
+  function renderNotifications() {
+    const box = $("#wxNotifyList");
+    if (!box || !state) return;
+    const events = (Array.isArray(state.meta.events) ? state.meta.events : []).map((event) => ({
+      at: parseDateTime(event.at) || new Date(),
+      title: event.title || "日程提醒",
+      body: event.body || "",
+      sent: true
+    }));
+    const upcoming = buildReminders(30).map((entry) => ({
+      at: entry.at,
+      title: `日程提醒 · ${entry.task.title}`,
+      body: `${formatShortDateTime(entry.when)} ${entry.task.title}${entry.kind === "deadline" ? " 截止" : " 开始"}${entry.label ? ` · ${entry.label}` : ""}`,
+      sent: false
+    }));
+    const all = events.concat(upcoming).sort((a, b) => a.at - b.at).slice(-40);
+    if (!all.length) {
+      box.innerHTML = `<div class="butler-welcome"><h3>还没有提醒</h3><p>设置任务时间后，提醒会出现在这里，并同步发到企业微信。</p></div>`;
+      return;
+    }
+    box.innerHTML = all.map((entry) => `<article class="wx-notice-card">
+      <span class="wx-notice-icon"><svg class="icon"><use href="#i-bell"></use></svg></span>
+      <div class="wx-notice-body">
+        <strong>${esc(entry.title)}</strong>
+        ${entry.body ? `<p>${esc(entry.body)}</p>` : ""}
+        <div class="wx-notice-meta"><span>${entry.sent ? chatTimeLabel(entry.at) : formatShortDateTime(entry.at)}</span><span class="wx-notice-badge ${entry.sent ? "is-sent" : ""}">${entry.sent ? "已发送" : "将发送"}</span></div>
+      </div>
+    </article>`).join("");
   }
 
   function applyButlerActions() {
@@ -3508,21 +3567,24 @@
   // ---------------------------------------------------------------------------
   // navigation
 
-  const VIEW_TITLES = { today: "今日", chat: "管家", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
+  const VIEW_TITLES = { chats: "对话", chat: "管家", notifications: "日程提醒", today: "今日", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
 
   function navigate(view, { updateHash = true } = {}) {
-    if (!VIEW_TITLES[view]) view = "today";
+    if (!VIEW_TITLES[view]) view = "chats";
     currentView = view;
     $$(".view").forEach((panel) => panel.classList.toggle("is-active", panel.dataset.viewPanel === view));
+    const navKey = view === "chat" || view === "notifications" ? "chats" : (view === "plan" ? "today" : view);
     $$("[data-view]").forEach((button) => {
-      const active = button.dataset.view === view;
-      button.classList.toggle("is-active", active && (button.classList.contains("nav-item") || button.classList.contains("mobile-nav") || button.closest(".mobile-nav")));
+      const active = button.dataset.view === navKey;
+      button.classList.toggle("is-active", active && (button.classList.contains("nav-item") || button.classList.contains("mobile-nav") || button.closest(".mobile-nav") || button.closest(".wx-nav")));
     });
     if (updateHash) history.replaceState(null, "", `#${view}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
     renderCommon();
-    if (view === "today") renderToday();
+    if (view === "chats") renderChats();
     if (view === "chat") renderChat();
+    if (view === "notifications") renderNotifications();
+    if (view === "today") renderToday();
     if (view === "plan") renderWeek();
     if (view === "tasks") renderTasks();
     if (view === "reminders") renderReminders();
@@ -3539,8 +3601,10 @@
 
   function renderAll() {
     renderCommon();
-    if (currentView === "today") renderToday();
+    if (currentView === "chats") renderChats();
     if (currentView === "chat") renderChat();
+    if (currentView === "notifications") renderNotifications();
+    if (currentView === "today") renderToday();
     if (currentView === "plan") renderWeek();
     if (currentView === "tasks") renderTasks();
     if (currentView === "reminders") renderReminders();
@@ -3743,6 +3807,17 @@
       if (viewButton) {
         event.preventDefault();
         navigate(viewButton.dataset.view);
+        return;
+      }
+      const chatRow = event.target.closest("[data-open-chat]");
+      if (chatRow) {
+        event.preventDefault();
+        navigate(chatRow.dataset.openChat === "notifications" ? "notifications" : "chat");
+        return;
+      }
+      if (event.target.closest("#wxNewTask")) {
+        event.preventDefault();
+        openTaskModal();
         return;
       }
 
@@ -4211,7 +4286,7 @@
 
     bindEvents();
     const hashView = location.hash.replace("#", "");
-    currentView = VIEW_TITLES[hashView] ? hashView : "today";
+    currentView = VIEW_TITLES[hashView] ? hashView : "chats";
     dayDate = todayKey();
     weekStartKey = dateKey(startOfWeek(new Date()));
     navigate(currentView, { updateHash: false });
@@ -4228,7 +4303,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117c").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117d").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4274,6 +4349,7 @@
     bootstrap();
   }
 })();
+
 
 
 
