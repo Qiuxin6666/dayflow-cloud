@@ -59,6 +59,8 @@
   let weekStartKey = dateKey(startOfWeek(new Date()));
   let parsedDrafts = [];
   let parsedActions = [];
+  let parsedPreference = null;
+  let preferenceReply = "";
   let managementReply = "";
   let captureMode = "add";
   let voiceRecognition = null;
@@ -1161,6 +1163,8 @@
     if (examples) examples.hidden = captureMode === "manage";
     parsedDrafts = [];
     parsedActions = [];
+    parsedPreference = null;
+    preferenceReply = "";
     managementReply = "";
     $("#parsePreview").hidden = true;
     updateAITag();
@@ -1411,6 +1415,20 @@
     return extractAIJson(data?.choices?.[0]?.message?.content);
   }
 
+  function normalizeAIPreference(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const settings = {};
+    if (raw.buffer !== undefined) settings.buffer = clamp(Number(raw.buffer) || 0, 0, 60);
+    if (raw.dailyCapacity !== undefined) settings.dailyCapacity = clamp(Number(raw.dailyCapacity) || 300, 60, 720);
+    if (raw.defaultDuration !== undefined) settings.defaultDuration = clamp(Number(raw.defaultDuration) || 45, 15, 240);
+    if (raw.defaultLead !== undefined) settings.defaultLead = clamp(Number(raw.defaultLead) || 0, 0, 120);
+    if (typeof raw.workStart === "string" && /^\d{1,2}:\d{2}$/.test(raw.workStart)) settings.workStart = raw.workStart;
+    if (typeof raw.workEnd === "string" && /^\d{1,2}:\d{2}$/.test(raw.workEnd)) settings.workEnd = raw.workEnd;
+    if (typeof raw.lunchEnabled === "boolean") settings.lunchEnabled = raw.lunchEnabled;
+    if (typeof raw.eveningEnabled === "boolean") settings.eveningEnabled = raw.eveningEnabled;
+    return Object.keys(settings).length ? settings : null;
+  }
+
   async function parseWithAI(text) {
     const now = new Date();
     const semesterStart = state.settings.semesterStart || "2026-08-31";
@@ -1423,7 +1441,7 @@
 学期第一周周一：${semesterStart}
 学期总周数：${state.settings.semesterWeeks || 19}
 未来 21 天日历：${calendar}
-输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}]}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}],"preference":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15},"reply":"给用户的一句中文说明"}
 规则：
 1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。逗号后面如果只有时间（如“晚自习，从18.40-20.50”），时间属于前一件事，不能拆成“从18.40-20.50”这种任务。
 2. 有明确开始时间（如“14:10-15:40”“18.40-20.50”“下午3点”）时 fixed=true，填 date/startTime/endTime；18.40 表示 18:40。没有结束时间就按合理用时估算。
@@ -1436,13 +1454,21 @@
 9. 普通一次性日程 repeat=none，repeatDays=[]。
 10. 时间用 24 小时制；不要编造用户没说的信息。
 11. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
+12. 如果用户是在说排程偏好或规则，而不是具体事件（如“不要排得太紧凑”“通勤也需要时间”“晚上不要排”“每天最多4小时”“工作到晚上10点”），tasks 必须是空数组 []，把要改的设置放进 preference，并在 reply 里说明。可用字段：buffer（任务间隔/通勤缓冲，0-60分钟）、dailyCapacity（每日专注上限，60-720分钟）、workStart、workEnd、lunchEnabled、eveningEnabled、defaultDuration、defaultLead。不要为了这类话创建“通勤”“调整排程”之类的任务。
+13. 如果用户只是在问问题或聊天，也返回 tasks=[]，不要硬造任务。
+示例：输入“不要排得太紧凑，通勤也需要时间”，应输出 {"tasks":[],"preference":{"buffer":30},"reply":"会把任务间隔调整为30分钟，给通勤留出时间"}。
 示例：输入“每周一三五晚自习，从18.40-20.50”（假设今天周五 08:30），应输出一个任务：title=晚自习，fixed=true，date=今天，startTime=18:40，endTime=20:50，repeat=weekly，repeatDays=[1,3,5]。
 示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
     const payload = await callDeepSeekJson(system, text);
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
     const drafts = tasks.map((task) => normalizeAIDraft(task, text)).filter(Boolean);
-    if (!drafts.length) throw new Error("AI 没有解析出任务");
-    return drafts;
+    const preference = normalizeAIPreference(payload.preference);
+    if (!drafts.length && !preference) throw new Error("AI 没有解析出任务或偏好");
+    return {
+      tasks: drafts,
+      preference,
+      reply: String(payload.reply || "").trim()
+    };
   }
 
   function aiTaskContext() {
@@ -2766,6 +2792,8 @@
     saveState();
     parsedActions = [];
     parsedDrafts = [];
+    parsedPreference = null;
+    preferenceReply = "";
     managementReply = "";
     $("#parsePreview").hidden = true;
     $("#captureInput").value = "";
@@ -2774,7 +2802,59 @@
     showToast("日程已更新", `${changed} 项修改已生效。`, "success");
   }
 
+  const PREFERENCE_LABELS = {
+    buffer: "任务之间缓冲",
+    dailyCapacity: "每日专注上限",
+    defaultDuration: "新任务默认用时",
+    defaultLead: "默认提前提醒",
+    workStart: "工作开始",
+    workEnd: "工作结束",
+    lunchEnabled: "午休",
+    eveningEnabled: "晚间时段"
+  };
+
+  function preferenceValueLabel(key, value) {
+    if (typeof value === "boolean") return value ? "开启" : "关闭";
+    if (["buffer", "dailyCapacity", "defaultDuration", "defaultLead"].includes(key)) return `${value} 分钟`;
+    return String(value);
+  }
+
+  function renderPreferencePreview() {
+    const panel = $("#parsePreview");
+    if (!panel) return;
+    panel.hidden = false;
+    const items = Object.entries(parsedPreference).map(([key, value]) => {
+      const before = state.settings[key];
+      return `<div class="preference-row"><span>${esc(PREFERENCE_LABELS[key] || key)}</span><strong>${esc(preferenceValueLabel(key, before))} → ${esc(preferenceValueLabel(key, value))}</strong></div>`;
+    }).join("");
+    panel.innerHTML = `<div class="preview-head"><strong>我准备调整排程偏好</strong><span>${esc(preferenceReply || "调整后重新排程")}</span></div>
+      <div class="preference-list">${items}</div>
+      <div class="preview-actions"><button class="btn btn--ghost" data-preview-cancel>取消</button><button class="btn btn--primary" data-preview-confirm>确认调整</button></div>`;
+  }
+
+  function applyParsedPreference() {
+    if (!parsedPreference) return;
+    Object.assign(state.settings, parsedPreference);
+    autoPlan();
+    saveState();
+    const summary = Object.entries(parsedPreference)
+      .map(([key, value]) => `${PREFERENCE_LABELS[key] || key}：${preferenceValueLabel(key, value)}`)
+      .join("，");
+    parsedPreference = null;
+    preferenceReply = "";
+    parsedDrafts = [];
+    $("#parsePreview").hidden = true;
+    $("#captureInput").value = "";
+    renderAll();
+    setCaptureMode("add");
+    showToast("排程偏好已调整", summary, "success", 8000);
+  }
+
   function renderParsePreview() {
+    if (parsedPreference) {
+      renderPreferencePreview();
+      return;
+    }
     if (parsedActions.length || (managementReply && !parsedDrafts.length)) {
       renderActionPreview();
       return;
@@ -2831,6 +2911,8 @@
       return;
     }
     const manageIntent = /(删除|删掉|去掉|取消|改到|改成|修改|调整|移到|挪到|换成|推迟|延后|提前|标记为完成|标记完成)/.test(text);
+    parsedPreference = null;
+    preferenceReply = "";
     const looksLikeNewEvent = /(今天|明天|后天|大后天|周[一二三四五六日天]|星期[一二三四五六日天]|上午|下午|中午|晚上|早上|今晚|明晚|\d{1,2}\s*[:：点])/.test(text);
     if (captureMode === "manage" && !manageIntent && looksLikeNewEvent) {
       setCaptureMode("add");
@@ -2863,6 +2945,7 @@
       return;
     }
     parsedActions = [];
+    parsedPreference = null;
     managementReply = "";
     if (!aiEnabled()) {
       showToast("解析日程需要 AI", "先到 设置 → AI 智能解析 填入 DeepSeek API Key。", "warn", 9000);
@@ -2870,14 +2953,18 @@
     }
     setCaptureBusy(true);
     try {
-      parsedDrafts = await parseWithAI(text);
+      const result = await parseWithAI(text);
+      parsedDrafts = result.tasks || [];
+      parsedPreference = parsedDrafts.length ? null : (result.preference || null);
+      preferenceReply = result.reply || "";
     } catch (error) {
       parsedDrafts = [];
+      parsedPreference = null;
       showToast("AI 解析失败", String(error.message || error), "warn", 10000);
     } finally {
       setCaptureBusy(false);
     }
-    if (!parsedDrafts.length) {
+    if (!parsedDrafts.length && !parsedPreference) {
       showToast("这次没太听懂", "可以换一种说法，或者带上具体日期和时间。", "warn");
     }
     renderParsePreview();
@@ -2934,6 +3021,8 @@
     saveState();
     parsedDrafts = [];
     parsedActions = [];
+    parsedPreference = null;
+    preferenceReply = "";
     managementReply = "";
     $("#parsePreview").hidden = true;
     $("#captureInput").value = "";
@@ -3421,6 +3510,10 @@
         return;
       }
       if (event.target.closest("[data-preview-confirm]")) {
+        if (parsedPreference) {
+          applyParsedPreference();
+          return;
+        }
         if (parsedActions.length) {
           applyParsedActions();
           return;
@@ -3432,6 +3525,8 @@
       if (event.target.closest("[data-preview-cancel]")) {
         parsedDrafts = [];
         parsedActions = [];
+        parsedPreference = null;
+        preferenceReply = "";
         managementReply = "";
         $("#parsePreview").hidden = true;
         return;
@@ -3690,10 +3785,12 @@
       const button = $("#testAI");
       setButtonBusy(button, true, "测试中…");
       try {
-        const drafts = await parseWithAI("明天下午3点和导师开会，地点在图书馆");
-        parsedDrafts = drafts;
+        const result = await parseWithAI("明天下午3点和导师开会，地点在图书馆");
+        parsedDrafts = result.tasks || [];
+        parsedPreference = parsedDrafts.length ? null : (result.preference || null);
+        preferenceReply = result.reply || "";
         renderParsePreview();
-        showToast("AI 解析已连通", `测试句子解析出 ${drafts.length} 件事，已在首页预览。`, "success", 8000);
+        showToast("AI 解析已连通", `测试句子解析出 ${parsedDrafts.length} 件事，已在首页预览。`, "success", 8000);
       } catch (error) {
         showToast("AI 测试失败", String(error.message || error), "warn", 10000);
       } finally {
@@ -3796,7 +3893,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117a").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117b").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3842,6 +3939,7 @@
     bootstrap();
   }
 })();
+
 
 
 
