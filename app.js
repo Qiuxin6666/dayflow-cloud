@@ -62,6 +62,8 @@
   let parsedPreference = null;
   let preferenceReply = "";
   let managementReply = "";
+  let butlerBusy = false;
+  let butlerPending = null;
   let captureMode = "add";
   let voiceRecognition = null;
   let currentMode = "auto";
@@ -1170,14 +1172,14 @@
     updateAITag();
   }
 
-  function setVoiceState(active) {
-    const button = $("#voiceBtn");
+  function setVoiceState(active, buttonId = "voiceBtn") {
+    const button = $(`#${buttonId}`);
     if (!button) return;
     button.classList.toggle("is-listening", active);
     button.setAttribute("aria-label", active ? "停止语音输入" : "语音输入");
   }
 
-  function toggleVoiceInput() {
+  function toggleVoiceInput(targetId = "captureInput", buttonId = "voiceBtn") {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       showToast("这个浏览器不支持语音识别", "请用 Chrome、Edge 或较新的 Safari；也可以直接打字。", "warn", 9000);
@@ -1186,7 +1188,7 @@
     if (voiceRecognition) {
       try { voiceRecognition.stop(); } catch { /* ignore */ }
       voiceRecognition = null;
-      setVoiceState(false);
+      setVoiceState(false, buttonId);
       return;
     }
     const recognition = new Recognition();
@@ -1195,17 +1197,17 @@
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => setVoiceState(true);
+    recognition.onstart = () => setVoiceState(true, buttonId);
     recognition.onresult = (event) => {
       let transcript = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
       }
-      const input = $("#captureInput");
+      const input = $(`#${targetId}`);
       if (input) input.value = transcript.trim();
     };
     recognition.onerror = (event) => {
-      setVoiceState(false);
+      setVoiceState(false, buttonId);
       voiceRecognition = null;
       const reason = event.error === "not-allowed"
         ? "浏览器没有麦克风权限，请在地址栏允许麦克风。"
@@ -1213,15 +1215,15 @@
       showToast("语音输入失败", reason, "warn", 8000);
     };
     recognition.onend = () => {
-      setVoiceState(false);
+      setVoiceState(false, buttonId);
       voiceRecognition = null;
-      $("#captureInput")?.focus();
+      $(`#${targetId}`)?.focus();
     };
     try {
       recognition.start();
-      showToast("正在听…", "说完后可以检查文字，再点「AI 帮我安排」。", "default", 4000);
+      showToast("正在听…", "说完后可以检查文字，再发送。", "default", 4000);
     } catch (error) {
-      setVoiceState(false);
+      setVoiceState(false, buttonId);
       voiceRecognition = null;
       showToast("无法启动语音输入", String(error.message || error), "warn");
     }
@@ -1429,6 +1431,34 @@
     return Object.keys(settings).length ? settings : null;
   }
 
+  async function callDeepSeekConversation(system, messages) {
+    const key = aiKey();
+    if (!key) throw new Error("没有配置 DeepSeek API Key");
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
+      body: JSON.stringify({
+        model: aiModel(),
+        messages: [{ role: "system", content: system }, ...messages],
+        temperature: 0.35,
+        max_tokens: 1800,
+        response_format: { type: "json_object" },
+        thinking: { type: "disabled" },
+        stream: false
+      })
+    });
+    if (!response.ok) {
+      let detail = "";
+      try { detail = (await response.json())?.error?.message || ""; } catch { /* ignore */ }
+      throw new Error(detail || `AI 接口返回 ${response.status}`);
+    }
+    const data = await response.json();
+    return extractAIJson(data?.choices?.[0]?.message?.content);
+  }
+
   async function parseWithAI(text) {
     const now = new Date();
     const semesterStart = state.settings.semesterStart || "2026-08-31";
@@ -1564,6 +1594,276 @@
       }
     });
     return { reply: String(payload.reply || "").trim(), actions: normalized };
+  }
+
+  function chatHistory() {
+    return state && Array.isArray(state.meta.chat) ? state.meta.chat : [];
+  }
+
+  function chatTimeLabel(iso) {
+    const date = iso ? new Date(iso) : new Date();
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  }
+
+  function pushChat(role, content, persist = true) {
+    if (!state || !content) return;
+    const messages = chatHistory().slice(-39);
+    messages.push({ role, content, at: new Date().toISOString() });
+    state.meta.chat = messages;
+    if (persist) saveState();
+  }
+
+  function chatSystemPrompt() {
+    const now = new Date();
+    const calendar = Array.from({ length: 14 }, (_, i) => {
+      const key = addDaysKey(todayKey(), i);
+      return `${key} ${weekdayLabel(key)}`;
+    }).join("；");
+    const settings = {
+      workStart: state.settings.workStart,
+      workEnd: state.settings.workEnd,
+      lunchEnabled: state.settings.lunchEnabled,
+      lunchStart: state.settings.lunchStart,
+      lunchEnd: state.settings.lunchEnd,
+      buffer: state.settings.buffer,
+      dailyCapacity: state.settings.dailyCapacity,
+      defaultDuration: state.settings.defaultDuration,
+      defaultLead: state.settings.defaultLead,
+      eveningEnabled: state.settings.eveningEnabled
+    };
+    return `你是“日序”的私人日程管家。你不是命令解析器，而是能理解上下文、主动追问、替用户安排和调整日程的助手。
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
+未来 14 天：${calendar}
+学期第一周周一：${state.settings.semesterStart || "2026-08-31"}；学期总周数：${state.settings.semesterWeeks || 19}
+当前排程设置：${JSON.stringify(settings)}
+当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext())}
+只输出 JSON，不要 Markdown：
+{"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
+规则：
+1. 先理解用户真正想要什么。用户只是聊天、提问或表达偏好时，actions 可以为空，不要硬造任务。
+2. 信息不够或有歧义时，reply 直接问一个具体问题，actions 为空。例如“周三下午”没说几点，就问几点。
+3. 明确要安排时，用 add；一个 action 只放一件事。地点、备注、补充说明并入同一件，不要拆成“通勤”“准备”等任务。
+4. 有开始/结束时间就 fixed=true；18.40 表示 18:40；有明确时间就不要让系统自动找空档。
+5. 一周多个星期几只生成一个 add，repeat=weekly，repeatDays 用 1=周一…7=周日，例如一三五 [1,3,5]；date 是第一次发生日，如果今天符合且时间未过就填今天。
+6. “不要排太紧凑/通勤需要时间”这类是偏好，用 preference 调整 buffer（0-60 分钟），不要创建任务。
+7. 用户说“删除/改到/取消/推迟”时，必须从当前日程里选真实 id；不确定就追问，不要编 id。
+8. 用户说“所有/每次”时，可以对多个相同系列日程返回多个 update/delete。一次最多 20 个 action。
+9. 不要问“是否确认”，确认由界面负责；reply 只说明你理解了什么或准备做什么。
+10. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
+  }
+
+  function normalizeButlerActions(rawActions, text) {
+    const actions = [];
+    (Array.isArray(rawActions) ? rawActions : []).slice(0, 20).forEach((raw) => {
+      if (!raw || typeof raw !== "object") return;
+      if (raw.type === "add") {
+        const list = raw.task ? [raw.task] : (Array.isArray(raw.tasks) ? raw.tasks : []);
+        list.forEach((task) => {
+          const draft = normalizeAIDraft(task, text);
+          if (draft) actions.push({ type: "add", draft });
+        });
+        return;
+      }
+      if (raw.type === "update") {
+        const task = state.tasks.find((item) => item.id === raw.taskId);
+        if (!task) return;
+        const changes = normalizeAIChanges(raw.changes, task);
+        if (Object.keys(changes).length) actions.push({ type: "update", taskId: task.id, task, changes });
+        return;
+      }
+      if (raw.type === "delete") {
+        const task = state.tasks.find((item) => item.id === raw.taskId);
+        if (task) actions.push({ type: "delete", taskId: task.id, task });
+        return;
+      }
+      if (raw.type === "preference") {
+        const settings = normalizeAIPreference(raw.settings || raw);
+        if (settings) actions.push({ type: "preference", settings });
+      }
+    });
+    return actions;
+  }
+
+  function butlerActionLabel(action) {
+    if (action.type === "add") {
+      const draft = action.draft;
+      return `新增：${draft.title}${draft.repeatLabel ? `（${draft.repeatLabel}）` : ""}`;
+    }
+    if (action.type === "update") return `修改：${action.task.title}`;
+    if (action.type === "delete") return `删除：${action.task.title}`;
+    if (action.type === "preference") {
+      return `调整偏好：${Object.entries(action.settings).map(([key, value]) => `${PREFERENCE_LABELS[key] || key} ${preferenceValueLabel(key, value)}`).join("，")}`;
+    }
+    return "调整日程";
+  }
+
+  async function callButlerAI() {
+    const history = chatHistory().slice(-14).map((message) => ({ role: message.role, content: message.content }));
+    return callDeepSeekConversation(chatSystemPrompt(), history);
+  }
+
+  function renderChat() {
+    const box = $("#butlerMessages");
+    if (!box) return;
+    const messages = chatHistory();
+    let html = "";
+    if (!messages.length) {
+      html = `<div class="butler-welcome">
+        <div class="capture-mark"><svg class="icon"><use href="#i-sparkles"></use></svg></div>
+        <h3>我在，慢慢说。</h3>
+        <p>你可以直接告诉我这周想怎么过、哪件事要改，或者只是聊聊。<br>我不会硬把你的话变成任务。</p>
+        <div class="butler-suggestions">
+          <button data-butler-suggestion="这周别排太满，给我留点通勤时间">这周别排太满</button>
+          <button data-butler-suggestion="帮我看看明天有什么安排">明天有什么安排</button>
+          <button data-butler-suggestion="每周一三五晚上七点到九点晚自习">加一三五晚自习</button>
+        </div>
+      </div>`;
+    } else {
+      html = messages.map((message) => `<div class="butler-message is-${message.role === "user" ? "user" : "assistant"}">
+        <div class="butler-bubble">${esc(message.content)}</div>
+        <span class="butler-message-time">${chatTimeLabel(message.at)}</span>
+      </div>`).join("");
+    }
+    if (butlerPending?.actions?.length) {
+      html += `<div class="butler-message is-assistant">
+        <div class="butler-pending">
+          <div class="butler-pending-head"><strong>我准备这样处理</strong><span>${butlerPending.actions.length} 项</span></div>
+          <div class="butler-pending-list">${butlerPending.actions.map((action) => `<div class="butler-pending-item"><b>•</b><span>${esc(butlerActionLabel(action))}</span></div>`).join("")}</div>
+          <div class="butler-pending-actions"><button class="btn btn--ghost" data-butler-cancel>先不改</button><button class="btn btn--primary" data-butler-confirm>确认执行</button></div>
+        </div>
+      </div>`;
+    }
+    if (butlerBusy) html += `<div class="butler-typing">正在理解你的意思…</div>`;
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function applyButlerActions() {
+    if (!butlerPending?.actions?.length) return;
+    let added = 0;
+    let skipped = 0;
+    let changed = 0;
+    let needsPlan = false;
+    const existing = new Set(state.tasks.map(taskDuplicateKey));
+    butlerPending.actions.forEach((action) => {
+      if (action.type === "add") {
+        const draft = action.draft;
+        const occurrences = Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length
+          ? draft.repeatOccurrences
+          : [null];
+        occurrences.forEach((occurrence) => {
+          const task = normalizeTask({
+            id: uid(),
+            title: draft.title,
+            notes: draft.notes + (draft.repeatLabel ? ` · ${draft.repeatLabel}` : ""),
+            category: draft.category,
+            priority: draft.priority,
+            estimate: draft.estimate,
+            fixed: draft.fixed,
+            start: occurrence?.start || draft.start,
+            end: occurrence?.end || draft.end,
+            deadline: occurrence ? null : draft.deadline,
+            availableFrom: occurrence ? null : draft.availableFrom,
+            reminderLead: draft.reminderLead,
+            done: false,
+            createdAt: new Date().toISOString(),
+            demo: false
+          });
+          if (!task) return;
+          const key = taskDuplicateKey(task);
+          if (existing.has(key)) { skipped += 1; return; }
+          existing.add(key);
+          state.tasks.push(task);
+          added += 1;
+        });
+        return;
+      }
+      if (action.type === "update") {
+        const task = state.tasks.find((item) => item.id === action.taskId);
+        if (!task) return;
+        Object.assign(task, action.changes);
+        task.planWarning = false;
+        if (action.changes.start) {
+          task.fixed = true;
+          task.deadline = null;
+        }
+        if (action.changes.fixed === false || action.changes.deadline || action.changes.estimate) needsPlan = true;
+        changed += 1;
+        return;
+      }
+      if (action.type === "delete") {
+        const index = state.tasks.findIndex((item) => item.id === action.taskId);
+        if (index >= 0) {
+          state.tasks.splice(index, 1);
+          changed += 1;
+        }
+        return;
+      }
+      if (action.type === "preference") {
+        Object.assign(state.settings, action.settings);
+        needsPlan = true;
+        changed += 1;
+      }
+    });
+    if (needsPlan) autoPlan();
+    state.meta.lastPlanAt = new Date().toISOString();
+    const parts = [];
+    if (added) parts.push(`新增 ${added} 项`);
+    if (changed) parts.push(`调整 ${changed} 项`);
+    if (skipped) parts.push(`跳过 ${skipped} 项重复`);
+    const summary = parts.length ? `已处理：${parts.join("，")}` : "没有需要改的地方";
+    butlerPending = null;
+    pushChat("assistant", summary || "已经处理好了。", false);
+    saveState();
+    renderAll();
+    renderChat();
+    showToast("已执行", summary || "日程已更新", "success", 7000);
+  }
+
+  async function sendButlerMessage() {
+    if (butlerBusy) return;
+    const input = $("#butlerInput");
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    if (butlerPending?.actions?.length && /^(确认|可以|好|好的|执行|就这样|没问题)[。！!]?$/.test(text)) {
+      pushChat("user", text);
+      input.value = "";
+      applyButlerActions();
+      return;
+    }
+    if (butlerPending?.actions?.length && /^(取消|不用|算了|先不改|别改)/.test(text)) {
+      pushChat("user", text);
+      input.value = "";
+      butlerPending = null;
+      pushChat("assistant", "好，先不改。需要调整再告诉我。", false);
+      saveState();
+      renderChat();
+      return;
+    }
+    if (!aiEnabled()) {
+      showToast("管家需要 AI", "先到 设置 → AI 智能解析 填入 DeepSeek API Key。", "warn", 9000);
+      return;
+    }
+    butlerPending = null;
+    pushChat("user", text);
+    input.value = "";
+    butlerBusy = true;
+    renderChat();
+    try {
+      const payload = await callButlerAI();
+      const reply = String(payload.reply || "").trim() || "我在听。";
+      const actions = normalizeButlerActions(payload.actions, text);
+      butlerPending = actions.length ? { actions } : null;
+      pushChat("assistant", reply, false);
+      saveState();
+    } catch (error) {
+      pushChat("assistant", `刚才没接上：${String(error.message || error)}`, false);
+      saveState();
+    } finally {
+      butlerBusy = false;
+      renderChat();
+    }
   }
 
   function setCaptureBusy(busy) {
@@ -2970,15 +3270,18 @@
     renderParsePreview();
   }
 
-  function commitDrafts(drafts) {
-    if (!drafts.length) return;
-    const now = new Date().toISOString();
-    const taskKey = (task) => [
+  function taskDuplicateKey(task) {
+    return [
       String(task.title || "").replace(/[\s，,。；;：:、]/g, "").toLowerCase(),
       task.start || task.deadline || "",
       task.fixed ? "fixed" : "auto"
     ].join("|");
-    const existing = new Set(state.tasks.map(taskKey));
+  }
+
+  function commitDrafts(drafts) {
+    if (!drafts.length) return;
+    const now = new Date().toISOString();
+    const existing = new Set(state.tasks.map(taskDuplicateKey));
     let added = 0;
     let skipped = 0;
     drafts.forEach((draft) => {
@@ -3004,7 +3307,7 @@
           demo: false
         });
         if (task) {
-          const key = taskKey(task);
+          const key = taskDuplicateKey(task);
           if (existing.has(key)) {
             skipped += 1;
             return;
@@ -3205,7 +3508,7 @@
   // ---------------------------------------------------------------------------
   // navigation
 
-  const VIEW_TITLES = { today: "今日", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
+  const VIEW_TITLES = { today: "今日", chat: "管家", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
 
   function navigate(view, { updateHash = true } = {}) {
     if (!VIEW_TITLES[view]) view = "today";
@@ -3219,6 +3522,7 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
     renderCommon();
     if (view === "today") renderToday();
+    if (view === "chat") renderChat();
     if (view === "plan") renderWeek();
     if (view === "tasks") renderTasks();
     if (view === "reminders") renderReminders();
@@ -3236,6 +3540,7 @@
   function renderAll() {
     renderCommon();
     if (currentView === "today") renderToday();
+    if (currentView === "chat") renderChat();
     if (currentView === "plan") renderWeek();
     if (currentView === "tasks") renderTasks();
     if (currentView === "reminders") renderReminders();
@@ -3567,7 +3872,37 @@
     $$("#captureMode button").forEach((button) => {
       button.addEventListener("click", () => setCaptureMode(button.dataset.captureMode));
     });
-    $("#voiceBtn")?.addEventListener("click", toggleVoiceInput);
+    $("#voiceBtn")?.addEventListener("click", () => toggleVoiceInput("captureInput", "voiceBtn"));
+    $("#butlerForm")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendButlerMessage();
+    });
+    $("#butlerInput")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendButlerMessage();
+      }
+    });
+    $("#butlerMic")?.addEventListener("click", () => toggleVoiceInput("butlerInput", "butlerMic"));
+    $("#butlerMessages")?.addEventListener("click", (event) => {
+      const suggestion = event.target.closest("[data-butler-suggestion]");
+      if (suggestion) {
+        const input = $("#butlerInput");
+        if (input) {
+          input.value = suggestion.dataset.butlerSuggestion;
+          input.focus();
+        }
+        return;
+      }
+      if (event.target.closest("[data-butler-confirm]")) {
+        applyButlerActions();
+        return;
+      }
+      if (event.target.closest("[data-butler-cancel]")) {
+        butlerPending = null;
+        renderChat();
+      }
+    });
     $("#captureInput").addEventListener("keydown", (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
@@ -3893,7 +4228,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117b").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117c").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3939,6 +4274,7 @@
     bootstrap();
   }
 })();
+
 
 
 
