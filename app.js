@@ -2880,7 +2880,15 @@
   function commitDrafts(drafts) {
     if (!drafts.length) return;
     const now = new Date().toISOString();
+    const taskKey = (task) => [
+      String(task.title || "").replace(/[\s，,。；;：:、]/g, "").toLowerCase(),
+      task.start || task.deadline || "",
+      task.end || "",
+      task.fixed ? "fixed" : "auto"
+    ].join("|");
+    const existing = new Set(state.tasks.map(taskKey));
     let added = 0;
+    let skipped = 0;
     drafts.forEach((draft) => {
       const occurrences = Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length
         ? draft.repeatOccurrences
@@ -2904,6 +2912,12 @@
           demo: false
         });
         if (task) {
+          const key = taskKey(task);
+          if (existing.has(key)) {
+            skipped += 1;
+            return;
+          }
+          existing.add(key);
           state.tasks.push(task);
           added += 1;
         }
@@ -2922,10 +2936,11 @@
     const message = result.unscheduled
       ? `${added} 件已加入行程，${result.unscheduled} 件暂时排不下。`
       : `${added} 件已加入行程。`;
+    const duplicateNote = skipped ? ` ${skipped} 件重复安排已跳过。` : "";
     const repeatNote = drafts.some((draft) => Array.isArray(draft.repeatOccurrences) && draft.repeatOccurrences.length)
       ? " 重复事项已按单/双周展开。"
       : "";
-    showToast("已经替你排好", message + repeatNote, result.unscheduled ? "warn" : "success");
+    showToast("已经替你排好", message + duplicateNote + repeatNote, result.unscheduled ? "warn" : "success");
   }
 
   // ---------------------------------------------------------------------------
@@ -3776,7 +3791,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261113e").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261113f").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -3822,6 +3837,7 @@
     bootstrap();
   }
 })();
+
 
 
 
