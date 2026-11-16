@@ -1,14 +1,14 @@
 {
-  "name": "日序 DayFlow · 本地日程助理",
+  "name": "日序 DayFlow · 微信式日程管家",
   "short_name": "日序",
-  "description": "把日程和短期任务丢进来，自动生成行程，并在合适的时间提醒你。",
+  "description": "像微信一样对话的私人日程管家，自动安排行程并通过企业微信提醒。",
   "lang": "zh-CN",
-  "start_url": "./#today",
+  "start_url": "./#chats",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f1ede4",
-  "theme_color": "#18271f",
+  "background_color": "#ededed",
+  "theme_color": "#ededed",
   "icons": [
     {
       "src": "assets/icon-192.png",
