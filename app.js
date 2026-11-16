@@ -15,6 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
+  const APP_VERSION = "20261117e";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -4208,6 +4209,7 @@
       }
     });
     $("#exportBtn").addEventListener("click", exportData);
+    $("#checkUpdateBtn")?.addEventListener("click", () => checkForAppUpdate(true));
     $("#importBtn").addEventListener("click", () => $("#importFile").click());
     $("#cloudImportBtn")?.addEventListener("click", () => $("#importFile").click());
     $("#importFile").addEventListener("change", (event) => {
@@ -4246,6 +4248,46 @@
 
   // ---------------------------------------------------------------------------
   // init
+
+  async function forceAppUpdate(version) {
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      if (navigator.serviceWorker) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+    } catch { /* ignore */ }
+    const url = `${location.pathname}?v=${encodeURIComponent(version)}${location.hash || "#chats"}`;
+    location.replace(url);
+  }
+
+  function showUpdateBanner(version) {
+    if ($("#appUpdateBanner")) return;
+    const banner = document.createElement("div");
+    banner.id = "appUpdateBanner";
+    banner.style.cssText = "position:fixed;left:50%;top:12px;z-index:200;transform:translateX(-50%);display:flex;align-items:center;gap:12px;width:min(92vw,480px);padding:10px 12px;border-radius:12px;background:#1f2d25;color:#fbf7ee;box-shadow:0 12px 30px -12px rgba(0,0,0,.4);font-size:11px;";
+    banner.innerHTML = `<span style="flex:1">有新版本可用，更新后再继续使用。</span><button type="button" style="height:30px;padding:0 12px;border:0;border-radius:8px;background:#dcef96;color:#18271f;font-weight:650;font-size:10px">立即更新</button>`;
+    banner.querySelector("button").addEventListener("click", () => forceAppUpdate(version));
+    document.body.appendChild(banner);
+  }
+
+  async function checkForAppUpdate(manual = false) {
+    try {
+      const response = await fetch(`version.json?ts=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("version unavailable");
+      const data = await response.json();
+      if (data.version && data.version !== APP_VERSION) {
+        showUpdateBanner(data.version);
+      } else if (manual) {
+        showToast("已经是最新版本", APP_VERSION, "success");
+      }
+    } catch {
+      if (manual) showToast("检查更新失败", "网络不稳定，稍后再试。", "warn");
+    }
+  }
 
   async function bootstrap() {
     if (new URLSearchParams(location.search).has("skipboot")) {
@@ -4291,6 +4333,7 @@
     weekStartKey = dateKey(startOfWeek(new Date()));
     navigate(currentView, { updateHash: false });
     renderAll();
+    setTimeout(() => checkForAppUpdate(false), 1800);
 
     if (serverMode) {
       refreshServerMeta();
@@ -4303,7 +4346,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117d").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117e").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4349,6 +4392,7 @@
     bootstrap();
   }
 })();
+
 
 
 
