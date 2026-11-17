@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261117g";
+  const APP_VERSION = "20261117h";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1741,6 +1741,14 @@
       try {
         return await callDeepSeekConversation(strictSystem, history.slice(-8));
       } catch (retryError) {
+        if (retryError.rawContent) {
+          try {
+            return await callDeepSeekJson(
+              `你是 JSON 修复器。把用户给出的模型输出修复成一个合法 JSON 对象，保持原意，只输出 JSON。格式必须是 {"reply":"中文回复","actions":[...]}，actions 可以是空数组；不要输出解释或 Markdown。`,
+              retryError.rawContent.slice(0, 10000)
+            );
+          } catch { /* fall through */ }
+        }
         retryError.userMessage = "这次回复格式出了点问题，我没有改动任何日程。再发一次就好。";
         throw retryError;
       }
@@ -4423,7 +4431,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117g").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117h").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4469,6 +4477,7 @@
     bootstrap();
   }
 })();
+
 
 
 
