@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261117f";
+  const APP_VERSION = "20261117g";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1373,16 +1373,35 @@
   }
 
   function extractAIJson(content) {
-    const text = String(content || "").trim();
+    const text = String(content || "").replace(/^\uFEFF/, "").trim();
     try { return JSON.parse(text); } catch { /* continue */ }
     const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if (fenced) {
-      try { return JSON.parse(fenced[1].trim()); } catch { /* continue */ }
+      try { return JSON.parse(fenced[1].replace(/^\uFEFF/, "").trim()); } catch { /* continue */ }
     }
-    const first = text.indexOf("{");
-    const last = text.lastIndexOf("}");
-    if (first >= 0 && last > first) {
-      try { return JSON.parse(text.slice(first, last + 1)); } catch { /* continue */ }
+    // Find the first complete JSON object, respecting nested braces and strings.
+    for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = start; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            const candidate = text.slice(start, i + 1);
+            try { return JSON.parse(candidate); } catch { break; }
+          }
+        }
+      }
     }
     throw new Error("AI 返回的不是有效 JSON");
   }
@@ -1444,8 +1463,8 @@
       body: JSON.stringify({
         model: aiModel(),
         messages: [{ role: "system", content: system }, ...messages],
-        temperature: 0.35,
-        max_tokens: 1800,
+        temperature: 0.2,
+        max_tokens: 3000,
         response_format: { type: "json_object" },
         thinking: { type: "disabled" },
         stream: false
@@ -1457,7 +1476,14 @@
       throw new Error(detail || `AI 接口返回 ${response.status}`);
     }
     const data = await response.json();
-    return extractAIJson(data?.choices?.[0]?.message?.content);
+    const content = data?.choices?.[0]?.message?.content;
+    try {
+      return extractAIJson(content);
+    } catch (error) {
+      error.rawContent = String(content || "");
+      error.finishReason = data?.choices?.[0]?.finish_reason || "";
+      throw error;
+    }
   }
 
   async function parseWithAI(text) {
@@ -1502,7 +1528,7 @@
     };
   }
 
-  function aiTaskContext() {
+  function aiTaskContext(limit = 120) {
     const now = new Date();
     const from = new Date(now.getTime() - 7 * 86400000);
     const to = new Date(now.getTime() + 90 * 86400000);
@@ -1512,7 +1538,7 @@
         return !task.done && (!anchor || (anchor >= from && anchor <= to));
       })
       .sort((a, b) => String(a.start || a.deadline || "").localeCompare(String(b.start || b.deadline || "")))
-      .slice(0, 120)
+      .slice(0, limit)
       .map((task) => ({
         id: task.id,
         title: task.title,
@@ -1642,7 +1668,7 @@
 未来 14 天：${calendar}
 学期第一周周一：${state.settings.semesterStart || "2026-08-31"}；学期总周数：${state.settings.semesterWeeks || 19}
 当前排程设置：${JSON.stringify(settings)}
-当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext())}
+当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext(80))}
 只输出 JSON，不要 Markdown：
 {"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
 规则：
@@ -1655,7 +1681,8 @@
 7. 用户说“删除/改到/取消/推迟”时，必须从当前日程里选真实 id；不确定就追问，不要编 id。
 8. 用户说“所有/每次”时，可以对多个相同系列日程返回多个 update/delete。一次最多 20 个 action。
 9. 不要问“是否确认”，确认由界面负责；reply 只说明你理解了什么或准备做什么。
-10. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
+10. 用户说某节课是“水课/可以摸鱼/课上可以学别的”，是在说明那节课的时间可以拿来学习，不是要删除课程。先确认是哪一节，再建议把学习任务放进该时段；不要擅自删除原课程。
+11. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
   }
 
   function normalizeButlerActions(rawActions, text) {
@@ -1705,7 +1732,19 @@
 
   async function callButlerAI() {
     const history = chatHistory().slice(-14).map((message) => ({ role: message.role, content: message.content }));
-    return callDeepSeekConversation(chatSystemPrompt(), history);
+    try {
+      return await callDeepSeekConversation(chatSystemPrompt(), history);
+    } catch (error) {
+      if (!error.rawContent) throw error;
+      console.warn("Butler AI returned non-JSON", error.finishReason, error.rawContent.slice(0, 500));
+      const strictSystem = `${chatSystemPrompt()}\n\n非常重要：上一次输出不是合法 JSON${error.finishReason === "length" ? "（很可能被长度截断）" : ""}。这一次只输出一个完整、合法的 JSON 对象，必须包含 reply 字段；不要输出任何解释、Markdown 或额外文字。`;
+      try {
+        return await callDeepSeekConversation(strictSystem, history.slice(-8));
+      } catch (retryError) {
+        retryError.userMessage = "这次回复格式出了点问题，我没有改动任何日程。再发一次就好。";
+        throw retryError;
+      }
+    }
   }
 
   function renderChat() {
@@ -1942,7 +1981,8 @@
       pushChat("assistant", reply, false);
       saveState();
     } catch (error) {
-      pushChat("assistant", `刚才没接上：${String(error.message || error)}`, false);
+      const reason = error.userMessage || "刚才没接上，我没有改动任何日程。再发一次就好。";
+      pushChat("assistant", reason, false);
       saveState();
     } finally {
       butlerBusy = false;
@@ -4383,7 +4423,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117f").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261117g").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4429,6 +4469,7 @@
     bootstrap();
   }
 })();
+
 
 
 
