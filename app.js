@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261117h";
+  const APP_VERSION = "20261120a";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1624,7 +1624,9 @@
   }
 
   function chatHistory() {
-    return state && Array.isArray(state.meta.chat) ? state.meta.chat : [];
+    if (!state || !Array.isArray(state.meta.chat)) return [];
+    const bad = /请提供需要修复的模型输出|修复为合法的 JSON 对象|AI 返回的不是有效 JSON/;
+    return state.meta.chat.filter((message) => !bad.test(String(message.content || "")));
   }
 
   function chatTimeLabel(iso) {
@@ -1730,6 +1732,20 @@
     return "调整日程";
   }
 
+  async function callButlerFallback(text) {
+    const now = new Date();
+    const system = `你是日序的私人日程管家。只输出 JSON：{"reply":"简短中文回复","actions":[{"type":"add","task":{"title":"...","notes":"","category":"work|study|life|health|other","priority":2,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":null,"repeat":"none","repeatDays":[]}}]}。
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）。
+当前日程（修改/删除只能用这些 id）：${JSON.stringify(aiTaskContext(20))}。
+规则：明确安排就输出 add；有开始时间就 fixed=true，没有结束时间按合理用时；不确定就 reply 追问、actions=[]；不要输出 JSON 之外的任何内容。`;
+    const payload = await callDeepSeekJson(system, text);
+    const reply = String(payload?.reply || "");
+    if (/请提供.*(模型输出|内容)|修复为合法|JSON 对象/.test(reply)) {
+      throw new Error("fallback returned meta reply");
+    }
+    return payload;
+  }
+
   async function callButlerAI() {
     const history = chatHistory().slice(-14).map((message) => ({ role: message.role, content: message.content }));
     try {
@@ -1741,12 +1757,11 @@
       try {
         return await callDeepSeekConversation(strictSystem, history.slice(-8));
       } catch (retryError) {
-        if (retryError.rawContent) {
+        const lastUser = [...history].reverse().find((message) => message.role === "user")?.content || "";
+        if (lastUser) {
           try {
-            return await callDeepSeekJson(
-              `你是 JSON 修复器。把用户给出的模型输出修复成一个合法 JSON 对象，保持原意，只输出 JSON。格式必须是 {"reply":"中文回复","actions":[...]}，actions 可以是空数组；不要输出解释或 Markdown。`,
-              retryError.rawContent.slice(0, 10000)
-            );
+            const fallback = await callButlerFallback(lastUser);
+            if (fallback && typeof fallback.reply === "string") return fallback;
           } catch { /* fall through */ }
         }
         retryError.userMessage = "这次回复格式出了点问题，我没有改动任何日程。再发一次就好。";
@@ -4431,7 +4446,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261117h").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261120a").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4477,6 +4492,7 @@
     bootstrap();
   }
 })();
+
 
 
 
