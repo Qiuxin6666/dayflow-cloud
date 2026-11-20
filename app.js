@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261120b";
+  const APP_VERSION = "20261120c";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1626,7 +1626,13 @@
   function chatHistory() {
     if (!state || !Array.isArray(state.meta.chat)) return [];
     const bad = /请提供需要修复的模型输出|修复为合法的 JSON 对象|AI 返回的不是有效 JSON/;
-    return state.meta.chat.filter((message) => !bad.test(String(message.content || "")));
+    const falseClaim = /(我记上了|已经?记上|已经?安排|已添加|已删除|已修改|已取消|不做[了])/;
+    return state.meta.chat.filter((message) => {
+      const content = String(message.content || "");
+      if (bad.test(content)) return false;
+      if (message.role === "assistant" && falseClaim.test(content) && !/^已处理/.test(content)) return false;
+      return true;
+    });
   }
 
   function chatTimeLabel(iso) {
@@ -1674,6 +1680,7 @@
 只输出 JSON，不要 Markdown：
 {"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
 规则：
+0. 只有 actions 被用户点击“确认执行”后才会真正写入。reply 绝对不要声称“已记上/已添加/已删除/已修改/已取消”，应说“我准备……”。不要根据聊天记录里旧的“已记上”假设日程已经存在。
 1. 先理解用户真正想要什么。用户只是聊天、提问或表达偏好时，actions 可以为空，不要硬造任务。
 2. 信息不够或有歧义时，reply 直接问一个具体问题，actions 为空。例如“周三下午”没说几点，就问几点。
 3. 明确要安排时，用 add；一个 action 只放一件事。地点、备注、补充说明并入同一件，不要拆成“通勤”“准备”等任务。
@@ -1744,6 +1751,20 @@
       throw new Error("fallback returned meta reply");
     }
     return payload;
+  }
+
+  async function requestButlerActions(text) {
+    const now = new Date();
+    const system = `你是日序的日程管家。用户明确要求新增、修改或删除日程，你必须返回至少一个 action，不能只回复一句话。
+只输出 JSON：{"reply":"我准备……","actions":[{"type":"add","task":{...}} | {"type":"update","taskId":"...","changes":{...}} | {"type":"delete","taskId":"..."}]}
+当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
+当前日程（修改/删除只能使用这些 id）：${JSON.stringify(aiTaskContext(30))}
+规则：
+1. 用户说“今天/明天几点去某地/做某事”时，输出 add，fixed=true，date/startTime 填好；没有结束时间按合理用时。
+2. 用户说“不做/取消/删除某件事”时，从当前日程找到对应 id 输出 delete；找不到就不要编 id，reply 说明没找到。
+3. 用户说“改到/提前/推迟”时输出 update，taskId 必须来自当前日程。
+4. 不要声称已经写入；reply 用“我准备……”。`;
+    return callDeepSeekJson(system, text);
   }
 
   async function callButlerAI() {
@@ -1997,9 +2018,26 @@
     butlerBusy = true;
     renderChat();
     try {
-      const payload = await callButlerAI();
-      const reply = String(payload.reply || "").trim() || "我在听。";
-      const actions = normalizeButlerActions(payload.actions, text);
+      let payload = await callButlerAI();
+      let reply = String(payload.reply || "").trim() || "我在听。";
+      let actions = normalizeButlerActions(payload.actions, text);
+      const mutationIntent = /(记上|提醒我|帮我安排|安排到|加到|添加|新增|删除|删掉|取消|不做|改到|改成|推迟|提前)/.test(text);
+      if (!actions.length && mutationIntent) {
+        try {
+          const retryPayload = await requestButlerActions(text);
+          const retryActions = normalizeButlerActions(retryPayload.actions, text);
+          if (retryActions.length) {
+            payload = retryPayload;
+            actions = retryActions;
+            reply = String(retryPayload.reply || "").trim() || reply;
+          }
+        } catch { /* keep the normal reply */ }
+      }
+      if (!actions.length && /(已记上|已经?记上|已添加|已安排|已删除|已修改|已取消|会提醒你)/.test(reply)) {
+        reply = "我还没有写入日程。要不要我现在把它加上？";
+      } else if (actions.length && /(已记上|已添加|已删除|已修改|已取消)/.test(reply)) {
+        reply = `我准备处理这件事，确认后才写入。\n${reply}`;
+      }
       butlerPending = actions.length ? { actions } : null;
       pushChat("assistant", reply, false);
       saveState();
@@ -4491,7 +4529,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261120b").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261120c").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4537,6 +4575,7 @@
     bootstrap();
   }
 })();
+
 
 
 
