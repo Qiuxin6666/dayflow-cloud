@@ -1084,3 +1084,12 @@ body:not(.wx) .butler-rail-actions .btn { height: 30px; font-size: 9.5px; }
 @media (max-width: 900px) {
   .butler-desktop-rail { display: none !important; }
 }
+
+/* ---------- overlapping calendar items ---------- */
+.timeline-block.is-overlap { padding: 6px 6px 5px 8px; }
+.timeline-block.is-overlap .tb-title { font-size: 10px; }
+.timeline-block.is-overlap .tb-time { font-size: 7.5px; }
+.timeline-block.is-overlap .tb-meta { display: none; }
+.week-event.is-overlap { padding: 3px 4px 3px 5px; }
+.week-event.is-overlap .we-time { font-size: 7px; }
+.week-event.is-overlap .we-title { font-size: 8.5px; line-height: 1.25; }
