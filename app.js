@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261120a";
+  const APP_VERSION = "20261120b";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -2470,6 +2470,37 @@
     return { start, end };
   }
 
+  function assignOverlapColumns(items) {
+    const sorted = items.slice().sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+    let group = [];
+    let groupEnd = -1;
+    const flush = () => {
+      if (!group.length) return;
+      const columnEnds = [];
+      group.forEach((item) => {
+        let column = columnEnds.findIndex((end) => end <= item.startMin);
+        if (column < 0) {
+          column = columnEnds.length;
+          columnEnds.push(item.endMin);
+        } else {
+          columnEnds[column] = item.endMin;
+        }
+        item.overlapColumn = column;
+      });
+      const count = Math.max(1, columnEnds.length);
+      group.forEach((item) => { item.overlapCount = count; });
+      group = [];
+      groupEnd = -1;
+    };
+    sorted.forEach((item) => {
+      if (group.length && item.startMin >= groupEnd) flush();
+      group.push(item);
+      groupEnd = Math.max(groupEnd, item.endMin);
+    });
+    flush();
+    return sorted;
+  }
+
   function renderTimeline(dayTasks, key) {
     const range = timelineRange(dayTasks);
     const height = ((range.end - range.start) / 60) * HOUR_HEIGHT_DAY;
@@ -2509,20 +2540,27 @@
       lunch = `<div class="timeline-lunch" style="top:${top}px;height:${h}px"><span class="timeline-lunch-label">午休</span></div>`;
     }
 
-    const blocks = dayTasks.map((task) => {
+    const dayItems = dayTasks.map((task) => {
       const start = parseDateTime(task.start);
-      if (!start) return "";
+      if (!start) return null;
       const startMin = start.getHours() * 60 + start.getMinutes();
       const end = parseDateTime(task.end);
       const endMin = end ? end.getHours() * 60 + end.getMinutes() : startMin + (task.estimate || 45);
+      return { task, start, end, startMin, endMin };
+    }).filter(Boolean);
+    const blocks = assignOverlapColumns(dayItems).map((item) => {
+      const { task, start, end, startMin, endMin, overlapCount, overlapColumn } = item;
       const top = ((startMin - range.start) / 60) * HOUR_HEIGHT_DAY;
       const duration = Math.max(15, endMin - startMin);
       const blockHeight = Math.max((duration / 60) * HOUR_HEIGHT_DAY, 36);
       const now = new Date();
       const isNow = key === todayKey() && now >= start && now < end;
+      const overlapStyle = overlapCount > 1
+        ? `left:${(overlapColumn / overlapCount) * 100 + 0.6}%;width:${100 / overlapCount - 1.2}%;right:auto;`
+        : "";
       return `
-        <article class="timeline-block tone-${task.category} ${task.fixed ? "is-fixed" : ""} ${task.done ? "is-done" : ""} ${isNow ? "is-now" : ""} ${duration < 60 ? "is-compact" : ""}"
-          data-task-id="${esc(task.id)}" style="top:${top}px;height:${blockHeight}px" tabindex="0" role="button" aria-label="${esc(task.title)}">
+        <article class="timeline-block tone-${task.category} ${task.fixed ? "is-fixed" : ""} ${task.done ? "is-done" : ""} ${isNow ? "is-now" : ""} ${duration < 60 ? "is-compact" : ""} ${overlapCount > 1 ? "is-overlap" : ""}"
+          data-task-id="${esc(task.id)}" style="top:${top}px;height:${blockHeight}px;${overlapStyle}" tabindex="0" role="button" aria-label="${esc(task.title)}">
           <div class="tb-time">${cleanTimeRange(task.start, task.end)}${task.fixed ? `<span class="dot"></span>固定` : ""}</div>
           <div class="tb-title">${esc(task.title)}</div>
           <div class="tb-meta"><span>${categoryLabel(task.category)}</span><span>·</span><span>${task.estimate || 45} 分钟</span>${task.done ? "<span>· 已完成</span>" : ""}</div>
@@ -2695,17 +2733,24 @@
     const lunchHeight = Math.max(0, (Math.min(lunchEnd, WEEK_END_HOUR * 60) - Math.max(lunchStart, WEEK_START_HOUR * 60)) / 60 * HOUR_HEIGHT_WEEK);
     days.forEach((key) => {
       const list = tasksForDay(key);
-      let blocks = "";
-      list.forEach((task) => {
+      const weekItems = list.map((task) => {
         const startTime = parseDateTime(task.start);
-        if (!startTime) return;
+        if (!startTime) return null;
         const startMin = startTime.getHours() * 60 + startTime.getMinutes();
         const endTime = parseDateTime(task.end);
         const endMin = endTime ? endTime.getHours() * 60 + endTime.getMinutes() : startMin + (task.estimate || 45);
+        return { task, startMin, endMin };
+      }).filter(Boolean);
+      let blocks = "";
+      assignOverlapColumns(weekItems).forEach((item) => {
+        const { task, startMin, endMin, overlapCount, overlapColumn } = item;
         const top = ((Math.max(startMin, WEEK_START_HOUR * 60) - WEEK_START_HOUR * 60) / 60) * HOUR_HEIGHT_WEEK;
         const duration = Math.max(15, endMin - startMin);
         const height = Math.max((duration / 60) * HOUR_HEIGHT_WEEK, 24);
-        blocks += `<article class="week-event tone-${task.category} ${task.fixed ? "is-fixed" : ""} ${task.done ? "is-done" : ""} ${duration < 35 ? "is-tiny" : ""}" data-task-id="${esc(task.id)}" style="top:${top}px;height:${height}px" title="${esc(task.title)} · ${cleanTimeRange(task.start, task.end)}">
+        const overlapStyle = overlapCount > 1
+          ? `left:${(overlapColumn / overlapCount) * 100 + 0.6}%;width:${100 / overlapCount - 1.2}%;right:auto;`
+          : "";
+        blocks += `<article class="week-event tone-${task.category} ${task.fixed ? "is-fixed" : ""} ${task.done ? "is-done" : ""} ${duration < 35 ? "is-tiny" : ""} ${overlapCount > 1 ? "is-overlap" : ""}" data-task-id="${esc(task.id)}" style="top:${top}px;height:${height}px;${overlapStyle}" title="${esc(task.title)} · ${cleanTimeRange(task.start, task.end)}">
           <div class="we-time">${cleanTimeRange(task.start, task.end)}</div>
           <div class="we-title">${esc(task.title)}</div>
         </article>`;
@@ -4446,7 +4491,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261120a").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261120b").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4492,6 +4537,7 @@
     bootstrap();
   }
 })();
+
 
 
 
