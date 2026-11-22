@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261120c";
+  const APP_VERSION = "20261122a";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1303,6 +1303,15 @@
     const endTime = /^\d{1,2}:\d{2}$/.test(raw.endTime || "")
       ? raw.endTime
       : (directEnd ? directEnd.slice(11, 16) : null);
+    const explicitToday = /(今天|今日|今晚|今早|今晨)/.test(sourceText);
+    const explicitTomorrow = /(明天|明日|明早|明晚|明晨)/.test(sourceText);
+    const startAt = date && startTime ? parseDateTime(`${date}T${startTime}`) : null;
+    if (startAt && startAt < new Date() && !explicitToday) {
+      date = addDaysKey(todayKey(), 1);
+    }
+    if (date === todayKey() && explicitTomorrow) {
+      date = addDaysKey(todayKey(), 1);
+    }
     // If today is one of the chosen weekdays and the time has not passed,
     // keep today's occurrence even if the model computed next week.
     if (date && startTime && repeatDays.includes((new Date().getDay() + 6) % 7)
@@ -1528,13 +1537,14 @@
     };
   }
 
-  function aiTaskContext(limit = 120) {
+  function aiTaskContext(limit = 120, upcomingOnly = false) {
     const now = new Date();
-    const from = new Date(now.getTime() - 7 * 86400000);
+    const from = new Date(now.getTime() - (upcomingOnly ? 5 * 60000 : 7 * 86400000));
     const to = new Date(now.getTime() + 90 * 86400000);
     return state.tasks
       .filter((task) => {
         const anchor = parseDateTime(task.start) || parseDateTime(task.deadline);
+        if (upcomingOnly && anchor && anchor < from) return false;
         return !task.done && (!anchor || (anchor >= from && anchor <= to));
       })
       .sort((a, b) => String(a.start || a.deadline || "").localeCompare(String(b.start || b.deadline || "")))
@@ -1676,7 +1686,7 @@
 未来 14 天：${calendar}
 学期第一周周一：${state.settings.semesterStart || "2026-08-31"}；学期总周数：${state.settings.semesterWeeks || 19}
 当前排程设置：${JSON.stringify(settings)}
-当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext(80))}
+当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext(80, true))}
 只输出 JSON，不要 Markdown：
 {"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
 规则：
@@ -1690,6 +1700,10 @@
 7. 用户说“删除/改到/取消/推迟”时，必须从当前日程里选真实 id；不确定就追问，不要编 id。
 8. 用户说“所有/每次”时，可以对多个相同系列日程返回多个 update/delete。一次最多 20 个 action。
 9. 不要问“是否确认”，确认由界面负责；reply 只说明你理解了什么或准备做什么。
+9.1 历史消息带有本地时间戳，按时间顺序理解。当前时间可能已经晚于历史里说的“明天”，不要把历史中的日期直接当成未来。
+9.2 任何新安排都必须晚于当前时间。用户只说“一点到两点午休”且今天 13:00 已过时，应安排到明天 13:00–14:00，不能安排今天过去的时间；如果用户明确说“今天下午一点”但已过，则先指出已经过了并询问要不要改到明天。
+9.3 当前日程只包含尚未过去的安排。不要因为今天有一场已经结束的考试，就认为明天也有；也不要从历史日程推断重复。
+9.4 安排某天的新任务前，先检查该天是否和现有固定日程冲突；有冲突要明确说出来并询问是否调整，而不是默默重叠。
 10. 用户说某节课是“水课/可以摸鱼/课上可以学别的”，是在说明那节课的时间可以拿来学习，不是要删除课程。先确认是哪一节，再建议把学习任务放进该时段；不要擅自删除原课程。
 11. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
   }
@@ -1758,7 +1772,7 @@
     const system = `你是日序的日程管家。用户明确要求新增、修改或删除日程，你必须返回至少一个 action，不能只回复一句话。
 只输出 JSON：{"reply":"我准备……","actions":[{"type":"add","task":{...}} | {"type":"update","taskId":"...","changes":{...}} | {"type":"delete","taskId":"..."}]}
 当前本地时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}T${pad2(now.getHours())}:${pad2(now.getMinutes())}（UTC+8）
-当前日程（修改/删除只能使用这些 id）：${JSON.stringify(aiTaskContext(30))}
+当前日程（修改/删除只能使用这些 id）：${JSON.stringify(aiTaskContext(30, true))}
 规则：
 1. 用户说“今天/明天几点去某地/做某事”时，输出 add，fixed=true，date/startTime 填好；没有结束时间按合理用时。
 2. 用户说“不做/取消/删除某件事”时，从当前日程找到对应 id 输出 delete；找不到就不要编 id，reply 说明没找到。
@@ -1768,7 +1782,10 @@
   }
 
   async function callButlerAI() {
-    const history = chatHistory().slice(-14).map((message) => ({ role: message.role, content: message.content }));
+    const history = chatHistory().slice(-14).map((message) => ({
+      role: message.role,
+      content: `[${formatShortDateTime(message.at)}] ${message.content}`
+    }));
     try {
       return await callDeepSeekConversation(chatSystemPrompt(), history);
     } catch (error) {
@@ -4529,7 +4546,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261120c").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261122a").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4575,6 +4592,7 @@
     bootstrap();
   }
 })();
+
 
 
 
