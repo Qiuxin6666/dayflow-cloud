@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261122a";
+  const APP_VERSION = "20261126a";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -72,6 +72,7 @@
   let currentPriority = 2;
   let editingTaskId = null;
   let taskFilter = { status: "open", category: "all", query: "" };
+  let todoFilter = "open";
   let serverEvents = [];
   let eventCursor = 0;
   let pollTimer = null;
@@ -2374,6 +2375,7 @@
     });
     $("#navTodayCount").textContent = todayItems.length || "";
     $("#navTaskCount").textContent = openTasks.length || "";
+    $("#navTodoCount").textContent = state.tasks.filter((task) => !task.course && !task.fixed && !task.done).length || "";
     $("#userName").textContent = state.settings.userName || "朋友";
     $("#userAvatar").textContent = (state.settings.userName || "友").trim().slice(0, 1) || "友";
 
@@ -2972,6 +2974,96 @@
     $("#sumRate").textContent = `${rate}%`;
     $("#sumRateBar").style.width = `${rate}%`;
     $$("#taskTabs button").forEach((button) => button.classList.toggle("is-active", button.dataset.status === taskFilter.status));
+  }
+
+  function todoGroupFor(task, today) {
+    if (task.done) return "done";
+    const deadline = parseDateTime(task.deadline);
+    if (!deadline) return "none";
+    if (deadline < new Date()) return "overdue";
+    const key = dateKey(deadline);
+    if (key === today) return "today";
+    const weekEnd = addDaysKey(dateKey(startOfWeek(new Date())), 6);
+    if (key <= weekEnd) return "week";
+    return "later";
+  }
+
+  function todoRowHTML(task, today) {
+    const deadline = parseDateTime(task.deadline);
+    const start = parseDateTime(task.start);
+    const overdue = Boolean(deadline && deadline < new Date() && !task.done);
+    const isToday = Boolean(deadline && dateKey(deadline) === today && !task.done);
+    const ddlLabel = deadline
+      ? `${overdue ? "已过期" : "DDL"} · ${formatShortDateTime(deadline)}`
+      : "无 DDL";
+    return `<article class="todo-row ${overdue ? "is-overdue" : ""} ${task.done ? "is-done" : ""}" data-task-row="${esc(task.id)}">
+      <button class="todo-check" data-task-toggle="${esc(task.id)}" aria-label="${task.done ? "取消完成" : "标记完成"}"><svg class="icon"><use href="#i-check"></use></svg></button>
+      <div class="todo-body" data-task-open="${esc(task.id)}" role="button" tabindex="0">
+        <span class="todo-title">${esc(task.title)}</span>
+        <div class="todo-meta">
+          <span class="todo-chip">${esc(categoryLabel(task.category))}</span>
+          <span class="todo-chip ${overdue ? "is-overdue" : (isToday ? "is-today" : (deadline ? "is-deadline" : ""))}">${esc(ddlLabel)}</span>
+          ${start ? `<span class="todo-chip">${esc(cleanTimeRange(task.start, task.end))}</span>` : ""}
+          ${task.estimate ? `<span class="todo-chip">${task.estimate} 分钟</span>` : ""}
+        </div>
+      </div>
+      <button class="icon-btn" data-task-open="${esc(task.id)}" aria-label="编辑任务"><svg class="icon"><use href="#i-edit"></use></svg></button>
+    </article>`;
+  }
+
+  function renderTodo() {
+    if (!state) return;
+    const today = todayKey();
+    const tasks = state.tasks.filter((task) => !task.course && !task.fixed);
+    const open = tasks.filter((task) => !task.done);
+    const overdue = open.filter((task) => {
+      const deadline = parseDateTime(task.deadline);
+      return deadline && deadline < new Date();
+    });
+    const dueToday = open.filter((task) => {
+      const deadline = parseDateTime(task.deadline);
+      return deadline && dateKey(deadline) === today;
+    });
+    $("#todoOpenCount").textContent = open.length;
+    $("#todoOverdueCount").textContent = overdue.length;
+    $("#todoTodayCount").textContent = dueToday.length;
+    $("#navTodoCount").textContent = open.length;
+    $$("#todoTabs button").forEach((button) => button.classList.toggle("is-active", button.dataset.todoStatus === todoFilter));
+
+    let visible = tasks;
+    if (todoFilter === "open") visible = tasks.filter((task) => !task.done);
+    if (todoFilter === "done") visible = tasks.filter((task) => task.done);
+    visible = visible.slice().sort((a, b) => {
+      const da = parseDateTime(a.deadline);
+      const db = parseDateTime(b.deadline);
+      if (da && db) return da - db;
+      if (da) return -1;
+      if (db) return 1;
+      return String(a.createdAt).localeCompare(String(b.createdAt));
+    });
+
+    const groups = { overdue: [], today: [], week: [], later: [], none: [], done: [] };
+    visible.forEach((task) => groups[todoGroupFor(task, today)].push(task));
+    const titles = {
+      overdue: "已过期",
+      today: "今天到期",
+      week: "本周内",
+      later: "以后",
+      none: "没有 DDL",
+      done: "已完成"
+    };
+    let html = "";
+    Object.keys(groups).forEach((key) => {
+      if (!groups[key].length) return;
+      html += `<section class="todo-group">
+        <div class="todo-group-head"><h3>${titles[key]}</h3><span>${groups[key].length} 项</span></div>
+        ${groups[key].map((task) => todoRowHTML(task, today)).join("")}
+      </section>`;
+    });
+    if (!html) {
+      html = `<div class="todo-empty">${todoFilter === "done" ? "还没有完成的任务。" : "任务清单是空的，添加一件要做的事。"}<br><button class="btn btn--primary" data-add-task>添加任务</button></div>`;
+    }
+    $("#todoList").innerHTML = html;
   }
 
   // ---------------------------------------------------------------------------
@@ -3755,7 +3847,7 @@
   // ---------------------------------------------------------------------------
   // navigation
 
-  const VIEW_TITLES = { chats: "对话", chat: "管家", notifications: "日程提醒", today: "今日", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
+  const VIEW_TITLES = { chats: "对话", chat: "管家", notifications: "日程提醒", today: "今日", todo: "任务清单", plan: "行程", tasks: "任务箱", reminders: "提醒", settings: "设置" };
 
   function navigate(view, { updateHash = true } = {}) {
     if (!VIEW_TITLES[view]) view = "chats";
@@ -3773,6 +3865,7 @@
     if (view === "chat") renderChat();
     if (view === "notifications") renderNotifications();
     if (view === "today") renderToday();
+    if (view === "todo") renderTodo();
     if (view === "plan") renderWeek();
     if (view === "tasks") renderTasks();
     if (view === "reminders") renderReminders();
@@ -3793,6 +3886,7 @@
     if (currentView === "chat") renderChat();
     if (currentView === "notifications") renderNotifications();
     if (currentView === "today") renderToday();
+    if (currentView === "todo") renderTodo();
     if (currentView === "plan") renderWeek();
     if (currentView === "tasks") renderTasks();
     if (currentView === "reminders") renderReminders();
@@ -4010,6 +4104,18 @@
       if (event.target.closest("#wxNewTask")) {
         event.preventDefault();
         openTaskModal();
+        return;
+      }
+      if (event.target.closest("#todoAddBtn")) {
+        event.preventDefault();
+        openTaskModal();
+        return;
+      }
+      const todoTab = event.target.closest("[data-todo-status]");
+      if (todoTab) {
+        event.preventDefault();
+        todoFilter = todoTab.dataset.todoStatus;
+        renderTodo();
         return;
       }
 
@@ -4546,7 +4652,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261122a").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261126a").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4592,6 +4698,7 @@
     bootstrap();
   }
 })();
+
 
 
 
