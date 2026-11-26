@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261126d";
+  const APP_VERSION = "20261126e";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1391,8 +1391,8 @@
       estimate,
       fixed,
       noSchedule,
-      noReminder: noSchedule ? (raw.noReminder === undefined ? false : Boolean(raw.noReminder)) : Boolean(raw.noReminder),
-      noReminderDecided: raw.noReminder !== undefined,
+      noReminder: noSchedule ? Boolean(raw.noReminder) : Boolean(raw.noReminder),
+      noReminderDecided: raw.noReminder === true || raw.noReminder === false,
       dateKey: repeatOccurrences ? repeatOccurrences[0].date : (date || todayKey()),
       start,
       end,
@@ -1532,7 +1532,7 @@
 学期第一周周一：${semesterStart}
 学期总周数：${state.settings.semesterWeeks || 19}
 未来 21 天日历：${calendar}
-输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"noSchedule":true|false,"noReminder":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}],"preference":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15},"reply":"给用户的一句中文说明"}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"noSchedule":true|false,"noReminder":null,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}],"preference":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15},"reply":"给用户的一句中文说明"}
 规则：
 1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。逗号后面如果只有时间（如“晚自习，从18.40-20.50”），时间属于前一件事，不能拆成“从18.40-20.50”这种任务。
 2. 有明确开始时间（如“14:10-15:40”“18.40-20.50”“下午3点”）时 fixed=true，填 date/startTime/endTime；18.40 表示 18:40。没有结束时间就按合理用时估算。
@@ -1725,7 +1725,7 @@
 当前排程设置：${JSON.stringify(settings)}
 当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext(80, true))}
 只输出 JSON，不要 Markdown：
-{"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"noSchedule":false,"noReminder":false,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
+{"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"noSchedule":false,"noReminder":null,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
 规则：
 0. 只有 actions 被用户点击“确认执行”后才会真正写入。reply 绝对不要声称“已记上/已添加/已删除/已修改/已取消”，应说“我准备……”。不要根据聊天记录里旧的“已记上”假设日程已经存在。
 1. 先理解用户真正想要什么。用户只是聊天、提问或表达偏好时，actions 可以为空，不要硬造任务。
@@ -4796,7 +4796,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261126d").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261126e").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4842,6 +4842,8 @@
     bootstrap();
   }
 })();
+
+
 
 
 
