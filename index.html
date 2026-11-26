@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261122a">
+  <link rel="stylesheet" href="styles.css?v=20261126a">
 </head>
 <body class="wx">
   <svg class="svg-sprite" aria-hidden="true">
@@ -20,6 +20,7 @@
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.94 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5.5h16v11H8l-4 3.5v-14.5Z"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c.8-4 3.5-6 7.5-6s6.7 2 7.5 6"/></symbol>
@@ -77,6 +78,9 @@
           </button>
           <button class="nav-item" data-view="tasks">
             <svg class="icon"><use href="#i-inbox"></use></svg><span>任务箱</span><em class="nav-count" id="navTaskCount"></em>
+          </button>
+          <button class="nav-item" data-view="todo">
+            <svg class="icon"><use href="#i-list"></use></svg><span>任务清单</span><em class="nav-count" id="navTodoCount"></em>
           </button>
           <button class="nav-item" data-view="reminders">
             <svg class="icon"><use href="#i-bell"></use></svg><span>提醒</span>
@@ -317,6 +321,26 @@
           <div class="wx-list-foot">这些提醒也会通过企业微信机器人发出</div>
         </section>
 
+        <section class="view" id="view-todo" data-view-panel="todo">
+          <header class="wx-header">
+            <div><h1>任务清单</h1><span class="wx-header-sub">任务和截止时间，一眼看到</span></div>
+            <button class="wx-header-btn" id="todoAddBtn" aria-label="新增任务"><svg class="icon"><use href="#i-plus"></use></svg></button>
+          </header>
+          <div class="todo-card">
+            <div class="todo-stats">
+              <div><strong id="todoOpenCount">0</strong><span>待办</span></div>
+              <div><strong id="todoOverdueCount">0</strong><span>已过期</span></div>
+              <div><strong id="todoTodayCount">0</strong><span>今天到期</span></div>
+            </div>
+            <div class="todo-tabs" id="todoTabs">
+              <button data-todo-status="open" class="is-active">待办</button>
+              <button data-todo-status="done">已完成</button>
+              <button data-todo-status="all">全部</button>
+            </div>
+            <div class="todo-list" id="todoList"></div>
+          </div>
+        </section>
+
         <section class="view" id="view-plan" data-view-panel="plan">
           <div class="page-head">
             <div><p class="eyebrow">WEEKLY PLAN</p><h1>一周行程</h1><p class="page-sub">把任务放进时间里，留一点空白给意外和休息。</p></div>
@@ -511,6 +535,7 @@
   <nav class="wx-nav" aria-label="底部导航">
     <button data-view="chats" class="is-active"><svg class="icon"><use href="#i-chat"></use></svg><span>对话</span></button>
     <button data-view="today"><svg class="icon"><use href="#i-calendar"></use></svg><span>日程表</span></button>
+    <button data-view="todo"><svg class="icon"><use href="#i-list"></use></svg><span>任务</span></button>
     <button data-view="settings"><svg class="icon"><use href="#i-user"></use></svg><span>设置</span></button>
   </nav>
 
@@ -616,12 +641,13 @@
   </div>
 
   <noscript><div class="noscript">日序需要启用 JavaScript 才能运行。</div></noscript>
-  <script src="config.js?v=20261122a" defer></script>
+  <script src="config.js?v=20261126a" defer></script>
   <script src="vendor/supabase.js" defer></script>
-  <script src="cloud-boot.js?v=20261122a" defer></script>
-  <script src="app.js?v=20261122a" defer></script>
+  <script src="cloud-boot.js?v=20261126a" defer></script>
+  <script src="app.js?v=20261126a" defer></script>
 </body>
 </html>
+
 
 
 
