@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261126c";
+  const APP_VERSION = "20261126d";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -65,6 +65,7 @@
   let managementReply = "";
   let butlerBusy = false;
   let butlerPending = null;
+  let butlerReminderChoice = null;
   let captureMode = "add";
   let voiceRecognition = null;
   let currentMode = "auto";
@@ -1390,7 +1391,8 @@
       estimate,
       fixed,
       noSchedule,
-      noReminder: noSchedule ? true : Boolean(raw.noReminder),
+      noReminder: noSchedule ? (raw.noReminder === undefined ? false : Boolean(raw.noReminder)) : Boolean(raw.noReminder),
+      noReminderDecided: raw.noReminder !== undefined,
       dateKey: repeatOccurrences ? repeatOccurrences[0].date : (date || todayKey()),
       start,
       end,
@@ -1545,7 +1547,7 @@
 11. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
 12. 如果用户是在说排程偏好或规则，而不是具体事件（如“不要排得太紧凑”“通勤也需要时间”“晚上不要排”“每天最多4小时”“工作到晚上10点”），tasks 必须是空数组 []，把要改的设置放进 preference，并在 reply 里说明。可用字段：buffer（任务间隔/通勤缓冲，0-60分钟）、dailyCapacity（每日专注上限，60-720分钟）、workStart、workEnd、lunchEnabled、eveningEnabled、defaultDuration、defaultLead。不要为了这类话创建“通勤”“调整排程”之类的任务。
 13. 如果用户只是在问问题或聊天，也返回 tasks=[]，不要硬造任务。
-14. “只列在任务清单/不用排时间/不进行程”时 noSchedule=true、noReminder=true，startTime/endTime 为空，但 deadline 必须保留；“不需要通知/不用提醒”时 noReminder=true。
+14. “只列在任务清单/不用排时间/不进行程”时 noSchedule=true，startTime/endTime 为空，但 deadline 必须保留；用户没有明确说要不要提醒时，noReminder 留空，界面会询问；明确说“不需要通知/不用提醒”时才 noReminder=true。
 示例：输入“不要排得太紧凑，通勤也需要时间”，应输出 {"tasks":[],"preference":{"buffer":30},"reply":"会把任务间隔调整为30分钟，给通勤留出时间"}。
 示例：输入“每周一三五晚自习，从18.40-20.50”（假设今天周五 08:30），应输出一个任务：title=晚自习，fixed=true，date=今天，startTime=18:40，endTime=20:50，repeat=weekly，repeatDays=[1,3,5]。
 示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
@@ -1740,8 +1742,8 @@
 9.3 当前日程只包含尚未过去的安排。不要因为今天有一场已经结束的考试，就认为明天也有；也不要从历史日程推断重复。
 9.4 安排某天的新任务前，先检查该天是否和现有固定日程冲突；有冲突要明确说出来并询问是否调整，而不是默默重叠。
 9.5 用户说“今天完成/今天要做/明天完成/本周完成”但不给具体时段时，fixed=false，不要安排开始时间，但必须给 deadline：今天=今天 23:59，明天=明天 23:59，本周=本周日 23:59。绝不能把“今天完成”当成没有 DDL。
-9.6 用户说“只列在任务清单/不要排进行程/不用安排时间”时，noSchedule=true，fixed=false，start/end 为空；但日期/DDL 仍然要保留，不能因为不排时间就丢掉 DDL。
-9.7 用户说“不需要通知/不用提醒”时，noReminder=true；只列任务清单的任务默认 noReminder=true。
+9.6 用户说“只列在任务清单/不要排进行程/不用安排时间”时，noSchedule=true，fixed=false，start/end 为空；但日期/DDL 仍然要保留，不能因为不排时间就丢掉 DDL。用户没有明确说要不要提醒时，不要擅自决定，noReminder 字段留空，界面会询问。
+9.7 用户明确说“不需要通知/不用提醒”时才填 noReminder=true；明确说“需要提醒”时填 noReminder=false。只列任务清单的任务不能默认替用户关掉提醒。
 9.8 用户是在补充或修正上一条安排（“不用排时间”“只列清单”“不用提醒”）时，沿用上一条的主体和日期，不要新造一个没有日期的任务。
 10. 用户说某节课是“水课/可以摸鱼/课上可以学别的”，是在说明那节课的时间可以拿来学习，不是要删除课程。先确认是哪一节，再建议把学习任务放进该时段；不要擅自删除原课程。
 11. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
@@ -1870,10 +1872,18 @@
       </div>`).join("");
     }
     if (butlerPending?.actions?.length) {
+      const needsReminderChoice = butlerPending.actions.some((action) => action.type === "add"
+        && action.draft?.noSchedule
+        && action.draft?.deadline
+        && !action.draft.noReminderDecided);
       html += `<div class="butler-message is-assistant">
         <div class="butler-pending">
           <div class="butler-pending-head"><strong>我准备这样处理</strong><span>${butlerPending.actions.length} 项</span></div>
           <div class="butler-pending-list">${butlerPending.actions.map((action) => `<div class="butler-pending-item"><b>•</b><span>${esc(butlerActionLabel(action))}</span></div>`).join("")}</div>
+          ${needsReminderChoice ? `<div class="butler-reminder-choice">
+            <strong>这个任务需要提醒吗？</strong>
+            <div><button type="button" class="${butlerReminderChoice === "yes" ? "is-selected" : ""}" data-butler-reminder="yes">需要，DDL 前提醒</button><button type="button" class="${butlerReminderChoice === "no" ? "is-selected" : ""}" data-butler-reminder="no">不需要</button></div>
+          </div>` : ""}
           <div class="butler-pending-actions"><button class="btn btn--ghost" data-butler-cancel>先不改</button><button class="btn btn--primary" data-butler-confirm>确认执行</button></div>
         </div>
       </div>`;
@@ -1963,6 +1973,14 @@
 
   function applyButlerActions() {
     if (!butlerPending?.actions?.length) return;
+    const needsReminderChoice = butlerPending.actions.some((action) => action.type === "add"
+      && action.draft?.noSchedule
+      && action.draft?.deadline
+      && !action.draft.noReminderDecided);
+    if (needsReminderChoice && !butlerReminderChoice) {
+      showToast("先选一下", "这个任务只放清单，需要我提醒你吗？", "warn");
+      return;
+    }
     let added = 0;
     let skipped = 0;
     let changed = 0;
@@ -1975,6 +1993,9 @@
           ? draft.repeatOccurrences
           : [null];
         occurrences.forEach((occurrence) => {
+          const noReminder = draft.noSchedule
+            ? (!draft.deadline ? true : (draft.noReminderDecided ? draft.noReminder : butlerReminderChoice === "no"))
+            : draft.noReminder;
           const task = normalizeTask({
             id: uid(),
             title: draft.title,
@@ -1989,7 +2010,7 @@
             availableFrom: occurrence ? null : draft.availableFrom,
             reminderLead: draft.reminderLead,
             noSchedule: draft.noSchedule,
-            noReminder: draft.noReminder,
+            noReminder,
             done: false,
             createdAt: new Date().toISOString(),
             demo: false
@@ -2038,6 +2059,7 @@
     if (skipped) parts.push(`跳过 ${skipped} 项重复`);
     const summary = parts.length ? `已处理：${parts.join("，")}` : "没有需要改的地方";
     butlerPending = null;
+    butlerReminderChoice = null;
     pushChat("assistant", summary || "已经处理好了。", false);
     saveState();
     renderAll();
@@ -2061,6 +2083,7 @@
       pushChat("user", text);
       input.value = "";
       butlerPending = null;
+      butlerReminderChoice = null;
       pushChat("assistant", "好，先不改。需要调整再告诉我。", false);
       saveState();
       renderChat();
@@ -2071,6 +2094,7 @@
       return;
     }
     butlerPending = null;
+    butlerReminderChoice = null;
     pushChat("user", text);
     input.value = "";
     butlerBusy = true;
@@ -3043,6 +3067,8 @@
         <div class="todo-meta">
           <span class="todo-chip">${esc(categoryLabel(task.category))}</span>
           <span class="todo-chip ${overdue ? "is-overdue" : (isToday ? "is-today" : (deadline ? "is-deadline" : ""))}">${esc(ddlLabel)}</span>
+          ${task.noSchedule ? `<span class="todo-chip">仅清单</span>` : ""}
+          ${task.noSchedule ? `<span class="todo-chip">${task.noReminder ? "不提醒" : "DDL 提醒"}</span>` : ""}
           ${start ? `<span class="todo-chip">${esc(cleanTimeRange(task.start, task.end))}</span>` : ""}
           ${task.estimate ? `<span class="todo-chip">${task.estimate} 分钟</span>` : ""}
         </div>
@@ -3762,6 +3788,10 @@
     $("#taskTitle").value = task ? task.title : title;
     $("#taskNotes").value = task ? task.notes : "";
     $("#taskNoSchedule").checked = Boolean(task && task.noSchedule);
+    $("#inboxReminderChoice").hidden = !(task && task.noSchedule);
+    $$('input[name="inboxReminder"]').forEach((radio) => {
+      radio.checked = Boolean(task && task.noSchedule) && (radio.value === (task.noReminder ? "no" : "yes"));
+    });
 
     const fixed = task ? task.fixed : mode === "fixed";
     setMode(fixed ? "fixed" : "auto");
@@ -3824,10 +3854,19 @@
     base.course = false;
     base.reminderLead = $("#taskReminder").value === "" ? null : clamp(Number($("#taskReminder").value), 0, 2880);
     const noSchedule = Boolean($("#taskNoSchedule").checked);
+    const inboxReminder = document.querySelector('input[name="inboxReminder"]:checked')?.value || "";
+    if (noSchedule && $("#taskDeadline").value && !inboxReminder) {
+      showToast("先选一下", "这个任务只放清单，需要我在 DDL 前提醒你吗？", "warn");
+      return;
+    }
+    if (noSchedule && inboxReminder === "yes" && !$("#taskDeadline").value) {
+      showToast("需要先填截止时间", "要提醒的话，得先给这个任务一个 DDL。", "warn");
+      return;
+    }
 
     if (noSchedule) {
       base.noSchedule = true;
-      base.noReminder = true;
+      base.noReminder = inboxReminder !== "yes";
       base.fixed = false;
       base.start = null;
       base.end = null;
@@ -4329,12 +4368,18 @@
         }
         return;
       }
+      if (event.target.closest("[data-butler-reminder]")) {
+        butlerReminderChoice = event.target.closest("[data-butler-reminder]").dataset.butlerReminder;
+        renderChat();
+        return;
+      }
       if (event.target.closest("[data-butler-confirm]")) {
         applyButlerActions();
         return;
       }
       if (event.target.closest("[data-butler-cancel]")) {
         butlerPending = null;
+        butlerReminderChoice = null;
         renderChat();
       }
     });
@@ -4467,6 +4512,13 @@
     });
 
     $("#taskForm").addEventListener("submit", saveTaskFromForm);
+    $("#taskNoSchedule").addEventListener("change", (event) => {
+      const choice = $("#inboxReminderChoice");
+      choice.hidden = !event.target.checked;
+      if (!event.target.checked) {
+        $$('input[name="inboxReminder"]').forEach((radio) => { radio.checked = false; });
+      }
+    });
     $("#deleteTaskBtn").addEventListener("click", () => { if (editingTaskId) deleteTask(editingTaskId); });
     $$("[data-close-modal]").forEach((el) => el.addEventListener("click", closeTaskModal));
     $$("[data-close-confirm]").forEach((el) => el.addEventListener("click", () => closeConfirm(false)));
@@ -4744,7 +4796,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261126c").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261126d").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4790,6 +4842,7 @@
     bootstrap();
   }
 })();
+
 
 
 
