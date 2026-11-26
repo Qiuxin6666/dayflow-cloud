@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261126b";
+  const APP_VERSION = "20261126c";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -292,8 +292,10 @@
     if (!raw || typeof raw !== "object" || !raw.title) return null;
     const start = typeof raw.start === "string" && raw.start ? stripSeconds(raw.start) : null;
     const end = typeof raw.end === "string" && raw.end ? stripSeconds(raw.end) : null;
+    const noSchedule = Boolean(raw.noSchedule);
+    const noReminder = raw.noReminder === undefined ? noSchedule : Boolean(raw.noReminder);
     // A fixed task without a real start time cannot be pinned; let the planner place it.
-    const fixed = Boolean(raw.fixed && start);
+    const fixed = Boolean(raw.fixed && start && !noSchedule);
     const estimateRaw = Number(raw.estimate);
     const estimate = Number.isFinite(estimateRaw) ? clamp(estimateRaw, 5, 720) : 45;
     const category = CATEGORY_LABELS[raw.category] ? raw.category : "other";
@@ -306,9 +308,11 @@
       priority,
       estimate,
       fixed,
-      start,
-      end,
+      start: noSchedule ? null : start,
+      end: noSchedule ? null : end,
       course: Boolean(raw.course),
+      noSchedule,
+      noReminder,
       deadline: typeof raw.deadline === "string" && raw.deadline ? stripSeconds(raw.deadline) : null,
       availableFrom: typeof raw.availableFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.availableFrom) ? raw.availableFrom : null,
       reminderLead: raw.reminderLead === null || raw.reminderLead === undefined || raw.reminderLead === "" ? null : clamp(Number(raw.reminderLead), 0, 2880),
@@ -579,7 +583,7 @@
       busyByDay[key] = getBusyIntervals(key);
     });
 
-    const flexible = state.tasks.filter((task) => !task.done && !task.fixed);
+    const flexible = state.tasks.filter((task) => !task.done && !task.fixed && !task.noSchedule);
     flexible.forEach((task) => {
       task.start = null;
       task.end = null;
@@ -1322,9 +1326,10 @@
     }
     const deadlineRaw = String(raw.deadline || "").replace(" ", "T");
     const hasDeadline = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(deadlineRaw);
+    const noSchedule = Boolean(raw.noSchedule);
     // If the model returned an explicit start time, honour it instead of
     // letting autoPlan move the item to an arbitrary "free slot".
-    const fixed = Boolean(date && startTime && (raw.fixed === true || !hasDeadline));
+    const fixed = Boolean(date && startTime && !noSchedule && (raw.fixed === true || !hasDeadline));
     const rangeMinutes = fixed && endTime
       ? minutesFromTime(endTime) - minutesFromTime(startTime)
       : null;
@@ -1371,6 +1376,12 @@
       else if (/(本周|这周|这礼拜)/.test(text)) deadlineDay = addDaysKey(dateKey(startOfWeek(new Date())), 6);
       if (deadlineDay) deadline = `${deadlineDay}T23:59`;
     }
+    if (noSchedule) {
+      start = null;
+      end = null;
+      repeatOccurrences = null;
+      repeatLabel = "";
+    }
     return {
       title: String(raw.title).trim().slice(0, 80),
       notes: String(raw.notes || sourceText || "").slice(0, 1000),
@@ -1378,6 +1389,8 @@
       priority,
       estimate,
       fixed,
+      noSchedule,
+      noReminder: noSchedule ? true : Boolean(raw.noReminder),
       dateKey: repeatOccurrences ? repeatOccurrences[0].date : (date || todayKey()),
       start,
       end,
@@ -1517,7 +1530,7 @@
 学期第一周周一：${semesterStart}
 学期总周数：${state.settings.semesterWeeks || 19}
 未来 21 天日历：${calendar}
-输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}],"preference":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15},"reply":"给用户的一句中文说明"}
+输出格式：{"tasks":[{"title":"简洁中文标题","notes":"地点/备注","category":"work|study|life|health|other","priority":1|2|3,"estimate":分钟数,"fixed":true|false,"noSchedule":true|false,"noReminder":true|false,"date":"YYYY-MM-DD"|null,"startTime":"HH:mm"|null,"endTime":"HH:mm"|null,"deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}],"preference":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15},"reply":"给用户的一句中文说明"}
 规则：
 1. 一句话里的地点、备注、同义补充并入同一件事，不要拆成独立任务；只有明确不同的行动才拆成多条。逗号后面如果只有时间（如“晚自习，从18.40-20.50”），时间属于前一件事，不能拆成“从18.40-20.50”这种任务。
 2. 有明确开始时间（如“14:10-15:40”“18.40-20.50”“下午3点”）时 fixed=true，填 date/startTime/endTime；18.40 表示 18:40。没有结束时间就按合理用时估算。
@@ -1532,6 +1545,7 @@
 11. 标题保留课程名、人名、地点等关键信息，但不要把时间/时长写进标题。
 12. 如果用户是在说排程偏好或规则，而不是具体事件（如“不要排得太紧凑”“通勤也需要时间”“晚上不要排”“每天最多4小时”“工作到晚上10点”），tasks 必须是空数组 []，把要改的设置放进 preference，并在 reply 里说明。可用字段：buffer（任务间隔/通勤缓冲，0-60分钟）、dailyCapacity（每日专注上限，60-720分钟）、workStart、workEnd、lunchEnabled、eveningEnabled、defaultDuration、defaultLead。不要为了这类话创建“通勤”“调整排程”之类的任务。
 13. 如果用户只是在问问题或聊天，也返回 tasks=[]，不要硬造任务。
+14. “只列在任务清单/不用排时间/不进行程”时 noSchedule=true、noReminder=true，startTime/endTime 为空，但 deadline 必须保留；“不需要通知/不用提醒”时 noReminder=true。
 示例：输入“不要排得太紧凑，通勤也需要时间”，应输出 {"tasks":[],"preference":{"buffer":30},"reply":"会把任务间隔调整为30分钟，给通勤留出时间"}。
 示例：输入“每周一三五晚自习，从18.40-20.50”（假设今天周五 08:30），应输出一个任务：title=晚自习，fixed=true，date=今天，startTime=18:40，endTime=20:50，repeat=weekly，repeatDays=[1,3,5]。
 示例：输入“每个单周周一14:10-15:40，每个双周周三10:00-11:40我都要进行学生会值班”，应输出两个任务，标题都是“学生会值班”，分别 repeat=odd 和 repeat=even，date 分别是下一次单周周一和下一次双周周三，fixed=true。`;
@@ -1592,6 +1606,17 @@
     if (!end && start) {
       const estimate = out.estimate || Number(task.estimate) || 45;
       end = combineDateTime(dateKey(parseDateTime(start)), minutesFromTime(start.slice(11, 16)) + estimate);
+    }
+    if (source.noSchedule === true) {
+      out.noSchedule = true;
+      out.noReminder = true;
+      out.fixed = false;
+      out.start = null;
+      out.end = null;
+      start = null;
+      end = null;
+    } else if (source.noReminder === true) {
+      out.noReminder = true;
     }
     if (start) {
       out.start = start;
@@ -1698,7 +1723,7 @@
 当前排程设置：${JSON.stringify(settings)}
 当前日程（只能用这些 id 做修改/删除）：${JSON.stringify(aiTaskContext(80, true))}
 只输出 JSON，不要 Markdown：
-{"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
+{"reply":"像管家一样自然、简短的中文回复","actions":[{"type":"add","task":{"title":"...","notes":"...","category":"work|study|life|health|other","priority":1|2|3,"estimate":45,"fixed":true,"noSchedule":false,"noReminder":false,"date":"YYYY-MM-DD","startTime":"HH:mm","endTime":"HH:mm","deadline":"YYYY-MM-DDTHH:mm"|null,"repeat":"none|weekly|odd|even","repeatDays":[1,3,5]}},{"type":"update","taskId":"已有日程 id","changes":{"title":"...","start":"YYYY-MM-DDTHH:mm","end":"YYYY-MM-DDTHH:mm","deadline":"YYYY-MM-DDTHH:mm","estimate":45,"category":"work","priority":2,"notes":"..."}},{"type":"delete","taskId":"已有日程 id"},{"type":"preference","settings":{"buffer":30,"dailyCapacity":300,"workStart":"09:00","workEnd":"22:00","lunchEnabled":true,"eveningEnabled":false,"defaultDuration":45,"defaultLead":15}}]}
 规则：
 0. 只有 actions 被用户点击“确认执行”后才会真正写入。reply 绝对不要声称“已记上/已添加/已删除/已修改/已取消”，应说“我准备……”。不要根据聊天记录里旧的“已记上”假设日程已经存在。
 1. 先理解用户真正想要什么。用户只是聊天、提问或表达偏好时，actions 可以为空，不要硬造任务。
@@ -1715,6 +1740,9 @@
 9.3 当前日程只包含尚未过去的安排。不要因为今天有一场已经结束的考试，就认为明天也有；也不要从历史日程推断重复。
 9.4 安排某天的新任务前，先检查该天是否和现有固定日程冲突；有冲突要明确说出来并询问是否调整，而不是默默重叠。
 9.5 用户说“今天完成/今天要做/明天完成/本周完成”但不给具体时段时，fixed=false，不要安排开始时间，但必须给 deadline：今天=今天 23:59，明天=明天 23:59，本周=本周日 23:59。绝不能把“今天完成”当成没有 DDL。
+9.6 用户说“只列在任务清单/不要排进行程/不用安排时间”时，noSchedule=true，fixed=false，start/end 为空；但日期/DDL 仍然要保留，不能因为不排时间就丢掉 DDL。
+9.7 用户说“不需要通知/不用提醒”时，noReminder=true；只列任务清单的任务默认 noReminder=true。
+9.8 用户是在补充或修正上一条安排（“不用排时间”“只列清单”“不用提醒”）时，沿用上一条的主体和日期，不要新造一个没有日期的任务。
 10. 用户说某节课是“水课/可以摸鱼/课上可以学别的”，是在说明那节课的时间可以拿来学习，不是要删除课程。先确认是哪一节，再建议把学习任务放进该时段；不要擅自删除原课程。
 11. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
   }
@@ -1960,6 +1988,8 @@
             deadline: occurrence ? null : draft.deadline,
             availableFrom: occurrence ? null : draft.availableFrom,
             reminderLead: draft.reminderLead,
+            noSchedule: draft.noSchedule,
+            noReminder: draft.noReminder,
             done: false,
             createdAt: new Date().toISOString(),
             demo: false
@@ -2116,7 +2146,7 @@
     const now = new Date();
     const entries = [];
     state.tasks.forEach((task) => {
-      if (task.done) return;
+      if (task.done || task.noReminder) return;
       const start = parseDateTime(task.start);
       const end = parseDateTime(task.end) || (start ? new Date(start.getTime() + (task.estimate || 45) * 60000) : null);
       if (start && end && start > now) {
@@ -3651,6 +3681,8 @@
           deadline: occurrence ? null : draft.deadline,
           availableFrom: occurrence ? null : draft.availableFrom,
           reminderLead: draft.reminderLead,
+          noSchedule: draft.noSchedule,
+          noReminder: draft.noReminder,
           done: false,
           createdAt: now,
           demo: false
@@ -3729,6 +3761,7 @@
     $("#taskId").value = task ? task.id : "";
     $("#taskTitle").value = task ? task.title : title;
     $("#taskNotes").value = task ? task.notes : "";
+    $("#taskNoSchedule").checked = Boolean(task && task.noSchedule);
 
     const fixed = task ? task.fixed : mode === "fixed";
     setMode(fixed ? "fixed" : "auto");
@@ -3790,8 +3823,21 @@
     base.priority = currentPriority;
     base.course = false;
     base.reminderLead = $("#taskReminder").value === "" ? null : clamp(Number($("#taskReminder").value), 0, 2880);
+    const noSchedule = Boolean($("#taskNoSchedule").checked);
 
-    if (currentMode === "fixed") {
+    if (noSchedule) {
+      base.noSchedule = true;
+      base.noReminder = true;
+      base.fixed = false;
+      base.start = null;
+      base.end = null;
+      base.estimate = clamp(Number($("#taskEstimate").value) || 45, 15, 240);
+      base.deadline = $("#taskDeadline").value ? stripSeconds($("#taskDeadline").value) : null;
+      base.availableFrom = null;
+      base.planWarning = false;
+    } else if (currentMode === "fixed") {
+      base.noSchedule = false;
+      base.noReminder = false;
       const date = $("#taskDate").value || dayDate || todayKey();
       const time = $("#taskStart").value || "09:00";
       const startMin = minutesFromTime(time);
@@ -3803,6 +3849,8 @@
       base.deadline = null;
       base.availableFrom = null;
     } else {
+      base.noSchedule = false;
+      base.noReminder = false;
       const estimate = clamp(Number($("#taskEstimate").value) || 45, 15, 240);
       base.fixed = false;
       base.start = null;
@@ -3828,7 +3876,11 @@
     closeTaskModal();
     renderAll();
     if (currentView === "tasks") renderTasks();
-    showToast(existing ? "已经更新" : "已经加入行程", result.unscheduled ? "有任务暂时排不下，去任务箱调整一下截止时间。" : "时间已经重新排好了。", result.unscheduled ? "warn" : "success");
+    const toastTitle = existing ? "已经更新" : (noSchedule ? "已加入任务清单" : "已经加入行程");
+    const toastBody = noSchedule
+      ? (base.deadline ? "只放在任务清单，不会进行程，也不会发提醒。" : "只放在任务清单；建议补一个截止时间。")
+      : (result.unscheduled ? "有任务暂时排不下，去任务箱调整一下截止时间。" : "时间已经重新排好了。");
+    showToast(toastTitle, toastBody, noSchedule ? "success" : (result.unscheduled ? "warn" : "success"));
   }
 
   async function deleteTask(taskId) {
@@ -4608,11 +4660,23 @@
     const today = todayKey();
     let changed = false;
     state.tasks.forEach((task) => {
-      if (task.done || task.deadline || task.course) return;
+      if (task.course) return;
       const created = parseDateTime(task.createdAt);
-      if (!created || dateKey(created) !== today) return;
+      const createdToday = created && dateKey(created) === today;
       const text = `${task.title || ""} ${task.notes || ""}`;
-      if (/(今天|今日).*(完成|做完|搞定|交|要)/.test(text)) {
+      const inboxHint = /(只列.*任务清单|不安排具体时段|不进行程|只放任务清单|不需要通知|不用提醒)/.test(text);
+      if (inboxHint) {
+        task.noSchedule = true;
+        task.noReminder = true;
+        task.fixed = false;
+        task.start = null;
+        task.end = null;
+        if (!task.deadline && createdToday) task.deadline = `${today}T23:59`;
+        changed = true;
+        return;
+      }
+      if (task.done || task.deadline) return;
+      if (createdToday && /(今天|今日).*(完成|做完|搞定|交|要)/.test(text)) {
         task.deadline = `${today}T23:59`;
         changed = true;
       }
@@ -4680,7 +4744,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261126b").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261126c").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4726,6 +4790,8 @@
     bootstrap();
   }
 })();
+
+
 
 
 
