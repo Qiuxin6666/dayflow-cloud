@@ -15,7 +15,7 @@
   const AI_KEY_STORAGE = "dayflow.ai.key";
   const AI_MODEL_STORAGE = "dayflow.ai.model";
   const AI_ENABLED_STORAGE = "dayflow.ai.enabled";
-  const APP_VERSION = "20261126a";
+  const APP_VERSION = "20261126b";
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
   const WEEKDAYS_EN = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
   const CATEGORY_LABELS = { work: "工作", study: "学习", life: "生活", health: "健康", other: "其他" };
@@ -1359,9 +1359,18 @@
         repeatLabel = `${repeatPrefix}${daysLabel} · ${occurrences.length} 次`;
       }
     }
-    const deadline = !fixed && hasDeadline
+    let deadline = !fixed && hasDeadline
       ? deadlineRaw.slice(0, 16)
       : null;
+    if (!fixed && !deadline) {
+      const text = String(sourceText || "");
+      let deadlineDay = null;
+      if (/(今天|今日)/.test(text)) deadlineDay = todayKey();
+      else if (/(明天|明日)/.test(text)) deadlineDay = addDaysKey(todayKey(), 1);
+      else if (/(后天)/.test(text)) deadlineDay = addDaysKey(todayKey(), 2);
+      else if (/(本周|这周|这礼拜)/.test(text)) deadlineDay = addDaysKey(dateKey(startOfWeek(new Date())), 6);
+      if (deadlineDay) deadline = `${deadlineDay}T23:59`;
+    }
     return {
       title: String(raw.title).trim().slice(0, 80),
       notes: String(raw.notes || sourceText || "").slice(0, 1000),
@@ -1705,6 +1714,7 @@
 9.2 任何新安排都必须晚于当前时间。用户只说“一点到两点午休”且今天 13:00 已过时，应安排到明天 13:00–14:00，不能安排今天过去的时间；如果用户明确说“今天下午一点”但已过，则先指出已经过了并询问要不要改到明天。
 9.3 当前日程只包含尚未过去的安排。不要因为今天有一场已经结束的考试，就认为明天也有；也不要从历史日程推断重复。
 9.4 安排某天的新任务前，先检查该天是否和现有固定日程冲突；有冲突要明确说出来并询问是否调整，而不是默默重叠。
+9.5 用户说“今天完成/今天要做/明天完成/本周完成”但不给具体时段时，fixed=false，不要安排开始时间，但必须给 deadline：今天=今天 23:59，明天=明天 23:59，本周=本周日 23:59。绝不能把“今天完成”当成没有 DDL。
 10. 用户说某节课是“水课/可以摸鱼/课上可以学别的”，是在说明那节课的时间可以拿来学习，不是要删除课程。先确认是哪一节，再建议把学习任务放进该时段；不要擅自删除原课程。
 11. 像私人管家一样说话：简洁、自然、有判断，不要复述 JSON，不要提“我是 AI 模型”。`;
   }
@@ -4593,6 +4603,23 @@
   }
   applyResponsiveShell();
 
+  function repairTodayDeadlines() {
+    if (!state) return;
+    const today = todayKey();
+    let changed = false;
+    state.tasks.forEach((task) => {
+      if (task.done || task.deadline || task.course) return;
+      const created = parseDateTime(task.createdAt);
+      if (!created || dateKey(created) !== today) return;
+      const text = `${task.title || ""} ${task.notes || ""}`;
+      if (/(今天|今日).*(完成|做完|搞定|交|要)/.test(text)) {
+        task.deadline = `${today}T23:59`;
+        changed = true;
+      }
+    });
+    if (changed) saveState();
+  }
+
   async function bootstrap() {
     if (new URLSearchParams(location.search).has("skipboot")) {
       $("#bootScreen")?.remove();
@@ -4613,6 +4640,7 @@
     if (!state) state = loadLocalState();
     if (!state) state = defaultState();
     state = normalizeState(state);
+    repairTodayDeadlines();
 
     if (!state.meta.seeded) {
       seedDemo();
@@ -4652,7 +4680,7 @@
     }
 
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-      navigator.serviceWorker.register("sw.js?v=20261126a").catch(() => {});
+      navigator.serviceWorker.register("sw.js?v=20261126b").catch(() => {});
     }
 
     clockTimer = setInterval(() => {
@@ -4698,6 +4726,7 @@
     bootstrap();
   }
 })();
+
 
 
 
