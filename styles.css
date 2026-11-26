@@ -1093,3 +1093,48 @@ body:not(.wx) .butler-rail-actions .btn { height: 30px; font-size: 9.5px; }
 .week-event.is-overlap { padding: 3px 4px 3px 5px; }
 .week-event.is-overlap .we-time { font-size: 7px; }
 .week-event.is-overlap .we-title { font-size: 8.5px; line-height: 1.25; }
+
+/* ---------- task checklist ---------- */
+body.wx #view-todo { width: 100%; max-width: 560px; min-height: calc(100vh - 62px); margin: 0 auto; background: #ededed; }
+.wx-nav { grid-template-columns: repeat(4, 1fr); }
+.todo-card { padding: 14px 16px 80px; max-width: 920px; margin: 0 auto; }
+body.wx .todo-card { padding: 14px 12px 90px; }
+.todo-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.todo-stats > div { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.55); }
+body.wx .todo-stats > div { border-color: #e2e2e2; background: #fff; }
+.todo-stats strong { font-family: var(--font-serif); font-size: 24px; line-height: 1; }
+.todo-stats span { color: var(--muted-2); font-size: 9px; }
+body.wx .todo-stats strong { color: #111; }
+body.wx .todo-stats span { color: #999; }
+.todo-tabs { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.35); }
+body.wx .todo-tabs { border-color: #e2e2e2; background: #f7f7f7; }
+.todo-tabs button { height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-2); font-size: 10px; }
+.todo-tabs button.is-active { background: var(--forest); color: var(--cream); }
+body.wx .todo-tabs button.is-active { background: #07c160; color: #fff; }
+.todo-list { display: flex; flex-direction: column; gap: 14px; }
+.todo-group { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.62); }
+body.wx .todo-group { border-color: #e2e2e2; border-radius: 8px; background: #fff; }
+.todo-group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.35); }
+body.wx .todo-group-head { border-color: #ededed; background: #fafafa; }
+.todo-group-head h3 { margin: 0; font-size: 11px; font-weight: 650; }
+.todo-group-head span { color: var(--muted-2); font-size: 8.5px; }
+body.wx .todo-group-head span { color: #999; }
+.todo-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.todo-row:last-child { border-bottom: 0; }
+.todo-row.is-overdue { background: rgba(221,96,66,.055); }
+.todo-check { display: grid; place-items: center; width: 19px; height: 19px; flex: 0 0 19px; margin-top: 1px; border: 1px solid #c9c4b7; border-radius: 50%; background: transparent; color: transparent; }
+.todo-check .icon { width: 11px; height: 11px; }
+.todo-row.is-done .todo-check { background: var(--forest); border-color: var(--forest); color: var(--cream); }
+.todo-row.is-done .todo-title { color: var(--muted-2); text-decoration: line-through; }
+.todo-body { flex: 1; min-width: 0; cursor: pointer; }
+.todo-title { display: block; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.45; text-overflow: ellipsis; }
+body.wx .todo-title { color: #111; font-size: 14px; }
+.todo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+.todo-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 5px; background: rgba(24,39,31,.055); color: var(--muted-2); font-size: 8.5px; }
+body.wx .todo-chip { background: #f4f4f4; color: #777; }
+.todo-chip.is-deadline { background: #fff0e4; color: #a55a1e; }
+.todo-chip.is-overdue { background: #fde7e3; color: #bd3d2a; }
+.todo-chip.is-today { background: #fff4d6; color: #946313; }
+.todo-empty { padding: 38px 16px; color: var(--muted-2); text-align: center; font-size: 11px; }
+.todo-empty .btn { margin-top: 12px; }
+body.wx .todo-empty { color: #999; }
