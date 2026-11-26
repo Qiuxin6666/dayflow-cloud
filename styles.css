@@ -1143,3 +1143,18 @@ body.wx .todo-empty { color: #999; }
 .no-schedule-check input { margin-top: 3px; accent-color: var(--forest); }
 .no-schedule-check strong { display: block; color: var(--ink); font-size: 10.5px; font-weight: 600; }
 .no-schedule-check small { display: block; margin-top: 2px; color: var(--muted-2); font-size: 8.5px; line-height: 1.5; }
+
+.butler-reminder-choice { margin-top: 11px; padding: 10px; border: 1px solid rgba(251,247,238,.12); border-radius: 9px; background: rgba(251,247,238,.04); }
+.butler-reminder-choice > strong { display: block; margin-bottom: 7px; color: var(--cream); font-size: 10px; }
+.butler-reminder-choice > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.butler-reminder-choice button { height: 27px; padding: 0 9px; border: 1px solid rgba(251,247,238,.15); border-radius: 6px; background: transparent; color: rgba(251,247,238,.55); font-size: 9px; }
+.butler-reminder-choice button.is-selected { border-color: var(--lime); background: rgba(220,239,150,.12); color: var(--lime); }
+body.wx .butler-reminder-choice { border-color: #e5e5e5; background: #fff; }
+body.wx .butler-reminder-choice > strong { color: #111; }
+body.wx .butler-reminder-choice button { border-color: #ddd; color: #666; }
+body.wx .butler-reminder-choice button.is-selected { border-color: #07c160; background: #eef8f1; color: #07a854; }
+
+.inbox-reminder-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted-2); font-size: 9.5px; }
+.inbox-reminder-choice > span { flex: 0 0 100%; color: var(--ink); font-size: 10px; font-weight: 550; }
+.inbox-reminder-choice label { display: flex; align-items: center; gap: 5px; }
+.inbox-reminder-choice input { accent-color: var(--forest); }
