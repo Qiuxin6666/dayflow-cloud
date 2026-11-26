@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20261126c">
+  <link rel="stylesheet" href="styles.css?v=20261126d">
 </head>
 <body class="wx">
   <svg class="svg-sprite" aria-hidden="true">
@@ -561,7 +561,12 @@
           <button type="button" data-mode="auto" class="is-active"><svg class="icon"><use href="#i-sparkles"></use></svg><span><strong>智能安排</strong><small>我找空档，截止前完成</small></span></button>
           <button type="button" data-mode="fixed"><svg class="icon"><use href="#i-clock"></use></svg><span><strong>固定日程</strong><small>会议、约会等不可移动的事</small></span></button>
         </div>
-        <label class="no-schedule-check"><input type="checkbox" id="taskNoSchedule"><span><strong>只放任务清单</strong><small>不进行程、不发提醒，只保留截止时间</small></span></label>
+        <label class="no-schedule-check"><input type="checkbox" id="taskNoSchedule"><span><strong>只放任务清单</strong><small>不进行程，是否在 DDL 前提醒由你决定</small></span></label>
+        <div class="inbox-reminder-choice" id="inboxReminderChoice" hidden>
+          <span>这个任务需要提醒吗？</span>
+          <label><input type="radio" name="inboxReminder" value="yes">需要，DDL 前提醒</label>
+          <label><input type="radio" name="inboxReminder" value="no">不需要</label>
+        </div>
         <div class="form-grid form-grid--modal">
           <div class="field"><span>分类</span><div class="choice-pills" id="categoryPicker">
             <button type="button" data-category="work" class="is-active"><i class="dot dot--work"></i>工作</button>
@@ -642,12 +647,13 @@
   </div>
 
   <noscript><div class="noscript">日序需要启用 JavaScript 才能运行。</div></noscript>
-  <script src="config.js?v=20261126c" defer></script>
+  <script src="config.js?v=20261126d" defer></script>
   <script src="vendor/supabase.js" defer></script>
-  <script src="cloud-boot.js?v=20261126c" defer></script>
-  <script src="app.js?v=20261126c" defer></script>
+  <script src="cloud-boot.js?v=20261126d" defer></script>
+  <script src="app.js?v=20261126d" defer></script>
 </body>
 </html>
+
 
 
 
